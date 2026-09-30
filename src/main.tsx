@@ -55,7 +55,10 @@ type Device = {
   photo: PhotoState | null;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || ""
+).replace(/\/+$/, "");
+
 async function api(path: string, options?: RequestInit) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: "include",
