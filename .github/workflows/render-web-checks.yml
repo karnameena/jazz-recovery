@@ -1,0 +1,34 @@
+name: Jazz Lost Mode Website Checks
+
+on:
+  push:
+    branches: [render-web]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Reject committed private recovery data
+        shell: bash
+        run: |
+          if git ls-files -- '*.db' '*.db-shm' '*.db-wal' '*.sqlite' '*.sqlite3' '.env' '.env.local' | grep -q .; then
+            echo "ERROR: private database or environment file is tracked."
+            exit 1
+          fi
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build production Render static site
+        run: npm run build
+      - name: Verify React build output and Location controls
+        shell: bash
+        run: |
+          test -s dist/index.html
+          test -n "$(find dist/assets -name '*.js' -type f -print -quit)"
+          grep -q "LOCATION_ENABLE" src/main.tsx
+          grep -q "LOCATION_DISABLE" src/main.tsx
