@@ -1,0 +1,91 @@
+# Jazz Recovery — Lost Mode Website
+
+This repository is the **standalone React/Vite web dashboard** for Jazz Lost Mode. It was cross-checked against the latest `apps/lost-mode-web` directory in `karnameena/Jazz-AI-Assistant` (branch `feature/jazz-launcher-icon-repair-20261012`): the complete existing website source matches, including the device map, ring, photo, voice, recovery workflow, and owner-gated Location Services ON/OFF controls.
+
+The **server is not deployed from this repository**. Its separate GitHub repository is [jazz-recovery-server](https://github.com/karnameena/jazz-recovery-server), deployment branch `render-backend`.
+
+## Repository structure
+
+```text
+jazz-recovery/
+├── index.html
+├── package.json
+├── vite.config.ts
+├── .env.example
+├── .gitignore
+├── render.yaml
+├── src/
+│   ├── main.tsx
+│   ├── styles.css
+│   ├── responsive-fixes.css
+│   └── voice/
+│       ├── VoiceInput.tsx
+│       ├── recording.ts
+│       └── voice-input.css
+└── .github/workflows/render-web-checks.yml
+```
+
+No backend code, database, owner passwords, device tokens, local Whisper/Piper assets, or Android APKs belong in this repo.
+
+## Render deployment — Static Site
+
+Use **New → Static Site** in Render, choose your GitHub repository `karnameena/jazz-recovery` and branch `render-web`, with:
+
+| Setting | Value |
+|---|---|
+| Service type | Static Site |
+| Root directory | blank (the frontend is at repository root) |
+| Build command | `npm install --no-audit --no-fund && npm run build` |
+| Publish directory | `dist` |
+| NODE_VERSION | `24` |
+| VITE_API_BASE_URL | **blank** (recommended same-origin proxy setup) |
+
+Alternatively create the site from `render.yaml` using Render Blueprints. You only need one Static Site: don't create duplicate services if you already set one up manually.
+
+**Critical: configure API rewrite after provisioning the backend.** In the Render **Static Site** dashboard, select **Redirects/Rewrites** and add a **Rewrite** rule:
+
+```text
+Source: /api/*
+Destination: https://YOUR-ACTUAL-RECOVERY-BACKEND.onrender.com/api/*
+Action: Rewrite
+```
+
+Replace the example backend URL with your real Render **Web Service** HTTPS URL (the server repo's deployment), not this frontend website URL. This ensures website JavaScript calls the **same-origin** `/api` while Render proxies requests to your authenticated backend. It avoids cross-site cookie problems. Put this /api rule **before any** `/* → /index.html` SPA fallback. Never redirect your login requests; use Rewrite.
+
+For the backend, ensure `LOST_MODE_PUBLIC_ORIGINS` contains your exact HTTPS website origin, and configure cookies correctly for HTTPS. Sign in to the website only after the backend owns the correct user/device database.
+
+### Missing username or invalid password?
+
+The frontend does not contain accounts and it cannot reset credentials. Accounts and enrolled devices reside exclusively in the backend's SQLite database. If you deploy the backend code with an empty/ephemeral database, correct old credentials will return `Invalid username or password` (401). Import or restore your existing database securely onto a **persistent** backend disk, do not commit it to GitHub, and avoid inadvertently overwriting another active server database.
+
+The previous `jazz-recovery-server` repository's public Git history contained committed SQLite databases. Removing them from the latest branch does not erase historic exposure: make that repository private, clean up its history and rotate affected credentials before activating public lost-device recovery.
+
+### Verify
+
+- Open your deployed website origin in an incognito tab.
+- In browser developer tools → Network, sign in and confirm `/api/auth/login` is requested at the **website** origin.
+- `GET /api/auth/session` should succeed after login.
+- Registered devices should appear from the authoritative backend, not a new empty server.
+- The device's Companion must point to the **backend** HTTPS URL, not the static website.
+- Location Services ON/OFF additionally require explicit local device opt-in and provisioned Android Enterprise device-owner rights. The website alone cannot bypass Android permissions.
+
+## Local testing
+
+```powershell
+npm install
+$env:LOST_MODE_API_URL = "http://127.0.0.1:8890"
+$env:VITE_API_BASE_URL = ""
+npm run dev
+```
+
+Open `http://localhost:5190`. Vite dev proxy maps `/api` to `http://127.0.0.1:8890` by default, or the above custom `LOST_MODE_API_URL`. Start the separately authenticated backend first. For production static builds, `LOST_MODE_API_URL` alone is **not** embedded into browser code; you must use the Render Rewrite or a deliberate `VITE_API_BASE_URL` build-time origin.
+
+```powershell
+npm run build
+```
+
+Deploys automatically when this repository's `render-web` branch updates, if your Render Static Site is connected to it.
+
+## Source integration and rollback
+
+The existing web source was already identical to the latest monorepo web source at the time of setup, modulo newline encoding. This deployment branch only adds Render configuration, documentation, CI and ignore rules. Existing website behavior and recovered phone workflows are unchanged. The prior `main` branch and the main Jazz project are untouched.
