@@ -50,6 +50,8 @@ type Device = {
   charging?: boolean;
   network: string;
   lastSeen: string | null;
+  locationServices?: "ON" | "OFF" | "UNKNOWN" | "OFFLINE";
+  locationServicesLastConfirmed?: number | null;
   mode: string;
   location: LocationState | null;
   photo: PhotoState | null;
@@ -62,18 +64,10 @@ function apiBaseUrl() {
   try {
     const parsed = new URL(rawApiBaseUrl);
     if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-      throw new Error(
-        "API URL must not contain credentials, query parameters, or fragments.",
-      );
+      throw new Error("API URL must not contain credentials, query parameters, or fragments.");
     }
-    const local =
-      parsed.hostname === "localhost" ||
-      parsed.hostname === "127.0.0.1" ||
-      parsed.hostname === "::1";
-    if (
-      parsed.protocol !== "https:" &&
-      !(parsed.protocol === "http:" && local)
-    ) {
+    const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && local)) {
       throw new Error("Hosted Lost Mode API must use HTTPS.");
     }
     const cleanPath = parsed.pathname.replace(/\/+$/, "");
@@ -107,23 +101,20 @@ async function api(path: string, options: RequestInit = {}) {
     throw new Error(
       API_BASE_URL
         ? "Could not reach the Jazz Lost Mode server. Check the hosted API URL, HTTPS, CORS origin, and server status."
-        : "Could not reach the Jazz Lost Mode API. If web and server are hosted separately, set VITE_API_BASE_URL on the web build.",
+        : "Could not reach the Jazz Lost Mode API. If web and server are hosted separately, set VITE_API_BASE_URL on the web build."
     );
   }
 
-  const contentType = String(
-    response.headers.get("content-type") || "",
-  ).toLowerCase();
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) {
     throw new Error(
       `Lost Mode API returned an unexpected response (${response.status}). ` +
-        "Check VITE_API_BASE_URL and make sure it points to the Lost Mode server, not the website.",
+      "Check VITE_API_BASE_URL and make sure it points to the Lost Mode server, not the website."
     );
   }
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok)
-    throw new Error(data.error || `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
   return data;
 }
 
@@ -137,9 +128,7 @@ function mapEmbedUrl(location: LocationState) {
   const lat = Number(location.latitude);
   const lon = Number(location.longitude);
   const spread = 0.006;
-  const bbox = [lon - spread, lat - spread, lon + spread, lat + spread].join(
-    ",",
-  );
+  const bbox = [lon - spread, lat - spread, lon + spread, lat + spread].join(",");
   return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
 }
 
@@ -160,8 +149,7 @@ function downloadText(filename: string, value: string) {
 }
 
 function actionKey(name: string, args: Record<string, unknown> = {}) {
-  if (name === "RECOVERY_PHOTO")
-    return `${name}:${args.camera === "rear" ? "rear" : "front"}`;
+  if (name === "RECOVERY_PHOTO") return `${name}:${args.camera === "rear" ? "rear" : "front"}`;
   return name;
 }
 
@@ -212,58 +200,26 @@ function Login({ done }: { done: () => void }) {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
       <section className="auth-card glass-panel">
-        <div className="brand-mark">
-          <Sparkles size={28} />
-        </div>
+        <div className="brand-mark"><Sparkles size={28} /></div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
         <h1>Lost Mode</h1>
-        <p className="auth-subtitle">
-          Secure access to your registered recovery devices.
-        </p>
+        <p className="auth-subtitle">Secure access to your registered recovery devices.</p>
         <form onSubmit={submit} className="auth-form" autoComplete="on">
           <label>
             <span>Username</span>
-            <input
-              name="username"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              placeholder="Enter username"
-              required
-            />
+            <input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" required />
           </label>
           <label>
             <span>Password</span>
-            <input
-              ref={passwordRef}
-              name="password"
-              autoComplete="current-password"
-              type="password"
-              placeholder="Enter password"
-              required
-            />
+            <input ref={passwordRef} name="password" autoComplete="current-password" type="password" placeholder="Enter password" required />
           </label>
-          {error && (
-            <div className="error-banner" role="alert">
-              {error}
-            </div>
-          )}
-          <button
-            className="primary-button full-width"
-            type="submit"
-            disabled={submitting}
-          >
-            {submitting ? (
-              <RefreshCw className="spin" size={18} />
-            ) : (
-              <LockKeyhole size={18} />
-            )}
+          {error && <div className="error-banner" role="alert">{error}</div>}
+          <button className="primary-button full-width" type="submit" disabled={submitting}>
+            {submitting ? <RefreshCw className="spin" size={18} /> : <LockKeyhole size={18} />}
             {submitting ? "Verifying securely…" : "Enter Lost Mode"}
           </button>
         </form>
-        <div className="secure-note">
-          <ShieldCheck size={16} /> Owner-only authenticated recovery portal
-        </div>
+        <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
       </section>
       <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
     </main>
@@ -279,6 +235,9 @@ function App() {
   const [msg, setMsg] = useState("");
   const [activeCount, setActiveCount] = useState(0);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationFeedback, setLocationFeedback] = useState("");
+
   const actionLocks = useRef(new Set<string>());
 
   async function load() {
@@ -302,12 +261,8 @@ function App() {
       .finally(() => setReady(true));
   }, []);
 
-  useEffect(() => {
-    if (login) void load();
-  }, [login]);
-  useEffect(() => {
-    if (login && selected) void refresh(selected);
-  }, [login, selected]);
+  useEffect(() => { if (login) void load(); }, [login]);
+  useEffect(() => { if (login && selected) void refresh(selected); }, [login, selected]);
   useEffect(() => {
     if (!login || !selected) return;
     const timer = window.setInterval(() => {
@@ -325,9 +280,7 @@ function App() {
     if (!selected) return;
     const key = actionKey(name, args);
     if (actionLocks.current.has(key)) {
-      setMsg(
-        "That recovery request is already in progress. Jazz will refresh the latest result automatically.",
-      );
+      setMsg("That recovery request is already in progress. Jazz will refresh the latest result automatically.");
       return;
     }
 
@@ -345,16 +298,13 @@ function App() {
         method: "POST",
         body: JSON.stringify({ action: name, args }),
       });
-      setMsg(
-        data.deduplicated
-          ? "A matching recovery request is already queued. Waiting for the latest result…"
-          : "Recovery request sent. Waiting for the device…",
-      );
+      setMsg(data.deduplicated
+        ? "A matching recovery request is already queued. Waiting for the latest result…"
+        : "Recovery request sent. Waiting for the device…");
 
-      const maxAttempts =
-        name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
+      const maxAttempts = name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 650));
+        await new Promise(resolve => window.setTimeout(resolve, 650));
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
         if (attempts % 3 === 0) void load().catch(() => {});
@@ -369,18 +319,14 @@ function App() {
           const wanted = args.camera === "rear" ? "rear" : "front";
           const now = `${latest.photo?.camera ?? ""}:${String(latest.photo?.timestamp ?? "")}`;
           if (latest.photo?.camera === wanted && now !== beforePhoto) {
-            setMsg(
-              `${wanted === "rear" ? "Back" : "Front"} camera recovery photo updated.`,
-            );
+            setMsg(`${wanted === "rear" ? "Back" : "Front"} camera recovery photo updated.`);
             break;
           }
         } else if (name === "SET_RECOVERY_MODE" && latest.mode !== beforeMode) {
           setMsg("Lost Mode state updated.");
           break;
         } else if (attempts === maxAttempts - 1) {
-          setMsg(
-            "Recovery request sent. The page will continue refreshing automatically.",
-          );
+          setMsg("Recovery request sent. The page will continue refreshing automatically.");
         }
       }
     } catch (error) {
@@ -391,13 +337,53 @@ function App() {
     }
   }
 
+  async function locationControl(enabled: boolean) {
+    if (!selected || locationBusy) return;
+    const selectedAtStart = selected;
+    const desired = enabled ? "ON" : "OFF";
+    setLocationBusy(true);
+    setLocationFeedback("Sending owner-authorized Location Services " + desired + " request…");
+    try {
+      const queued = await api(`/api/devices/${selectedAtStart}/actions`, {
+        method: "POST",
+        body: JSON.stringify({ action: enabled ? "LOCATION_ENABLE" : "LOCATION_DISABLE" })
+      });
+      if (!queued.commandId) throw new Error("The Lost Mode server returned no command ID.");
+      setLocationFeedback(queued.deduplicated
+        ? "A matching request was already queued. Checking the phone's confirmed result…"
+        : "Command queued. Awaiting confirmation from your paired Android Companion…");
+      let completed = false;
+      for (let attempt = 0; attempt < 75; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 1400));
+        const data = await api(`/api/devices/${selectedAtStart}/commands/${encodeURIComponent(queued.commandId)}`);
+        if (data.confirmed && data.status === "CONFIRMED" && data.result?.locationServices === desired) {
+          setLocationFeedback("Device confirmed: Location Services " + desired + ".");
+          await refresh(selectedAtStart);
+          completed = true;
+          break;
+        }
+        if (["FAILED", "EXPIRED"].includes(data.status)) {
+          setLocationFeedback("Command " + data.status + ": " + (data.result?.error || data.result?.status || "The device did not confirm the requested state."));
+          completed = true;
+          break;
+        }
+        if (data.status === "DEVICE_OFFLINE" && attempt % 7 === 0) {
+          setLocationFeedback("Device offline. Command is queued, not successful; it will expire if the phone cannot reconnect.");
+        }
+      }
+      if (!completed) setLocationFeedback("No device confirmation yet. The command may still be pending; refresh the device status to check.");
+    } catch (error) {
+      setLocationFeedback(error instanceof Error ? error.message : "Location Services request failed.");
+    } finally {
+      setLocationBusy(false);
+    }
+  }
+
   async function logout() {
     setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
-    await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
-      () => {},
-    );
+    await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => {});
     setLogin(false);
     setDevices([]);
     setDevice(null);
@@ -416,8 +402,7 @@ function App() {
         setMsg("Location link copied to clipboard.");
       }
     } catch (error) {
-      if ((error as DOMException)?.name !== "AbortError")
-        setMsg("Could not share location on this browser.");
+      if ((error as DOMException)?.name !== "AbortError") setMsg("Could not share location on this browser.");
     }
   }
 
@@ -435,32 +420,19 @@ function App() {
       network: device.network,
       lastSeen: device.lastSeen,
       lastKnownLocation: device.location,
-      latestRecoveryPhoto: device.photo
-        ? {
-            camera: device.photo.camera,
-            timestamp: device.photo.timestamp,
-            includedSeparately: true,
-          }
-        : null,
+      latestRecoveryPhoto: device.photo ? {
+        camera: device.photo.camera,
+        timestamp: device.photo.timestamp,
+        includedSeparately: true,
+      } : null,
     };
-    downloadText(
-      `jazz-recovery-${device.deviceId || device.id}.json`,
-      JSON.stringify(report, null, 2),
-    );
+    downloadText(`jazz-recovery-${device.deviceId || device.id}.json`, JSON.stringify(report, null, 2));
     setMsg("Recovery report downloaded.");
   }
 
-  const onlineCount = useMemo(
-    () => devices.filter((item) => item.online).length,
-    [devices],
-  );
+  const onlineCount = useMemo(() => devices.filter((item) => item.online).length, [devices]);
 
-  if (!ready)
-    return (
-      <div className="loading-screen">
-        <RefreshCw className="spin" /> Loading secure recovery…
-      </div>
-    );
+  if (!ready) return <div className="loading-screen"><RefreshCw className="spin" /> Loading secure recovery…</div>;
   if (!login) return <Login done={() => setLogin(true)} />;
 
   return (
@@ -470,401 +442,165 @@ function App() {
 
       <header className="topbar glass-panel">
         <div className="brand-block">
-          <div className="brand-mark small-mark">
-            <Sparkles size={20} />
-          </div>
-          <div>
-            <div className="eyebrow">JAZZ AI ASSISTANT</div>
-            <h1>Lost Mode Command Center</h1>
-          </div>
+          <div className="brand-mark small-mark"><Sparkles size={20} /></div>
+          <div><div className="eyebrow">JAZZ AI ASSISTANT</div><h1>Lost Mode Command Center</h1></div>
         </div>
         <div className="topbar-actions">
-          <div className="fleet-pill">
-            <Radio size={16} />
-            <span>
-              {onlineCount}/{devices.length} online
-            </span>
-          </div>
-          <button
-            className="ghost-button"
-            onClick={() => {
-              void load();
-              if (selected) void refresh(selected);
-            }}
-          >
-            <RefreshCw size={17} /> Refresh
-          </button>
-          <button className="ghost-button danger-hover" onClick={logout}>
-            <LogOut size={17} /> Logout
-          </button>
+          <div className="fleet-pill"><Radio size={16} /><span>{onlineCount}/{devices.length} online</span></div>
+          <button className="ghost-button" onClick={() => { void load(); if (selected) void refresh(selected); }}><RefreshCw size={17} /> Refresh</button>
+          <button className="ghost-button danger-hover" onClick={logout}><LogOut size={17} /> Logout</button>
         </div>
       </header>
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
-          <div className="sidebar-title">
-            <div>
-              <span className="eyebrow">MY DEVICES</span>
-              <h2>Recovery Fleet</h2>
-            </div>
-            <span className="count-badge">{devices.length}</span>
-          </div>
+          <div className="sidebar-title"><div><span className="eyebrow">MY DEVICES</span><h2>Recovery Fleet</h2></div><span className="count-badge">{devices.length}</span></div>
           <div className="device-list">
-            {devices.length === 0 && (
-              <div className="empty-state compact">
-                <Smartphone size={24} />
-                <span>No enrolled devices</span>
-              </div>
-            )}
+            {devices.length === 0 && <div className="empty-state compact"><Smartphone size={24} /><span>No enrolled devices</span></div>}
             {devices.map((item) => (
-              <button
-                key={item.id}
-                className={`device-row ${selected === item.id ? "selected" : ""}`}
-                onClick={() => setSelected(item.id)}
-              >
-                <div className={`device-avatar ${item.online ? "live" : ""}`}>
-                  <Smartphone size={21} />
-                </div>
-                <div className="device-row-copy">
-                  <strong>
-                    {item.deviceName || item.deviceId || "Device"}
-                  </strong>
-                  <span>{item.deviceId || item.deviceType}</span>
-                  <small
-                    className={item.online ? "online-text" : "offline-text"}
-                  >
-                    {item.online ? "● Online" : "● Offline"}
-                  </small>
-                </div>
+              <button key={item.id} className={`device-row ${selected === item.id ? "selected" : ""}`} onClick={() => setSelected(item.id)}>
+                <div className={`device-avatar ${item.online ? "live" : ""}`}><Smartphone size={21} /></div>
+                <div className="device-row-copy"><strong>{item.deviceName || item.deviceId || "Device"}</strong><span>{item.deviceId || item.deviceType}</span><small className={item.online ? "online-text" : "offline-text"}>{item.online ? "● Online" : "● Offline"}</small></div>
                 <ChevronRight size={18} />
               </button>
             ))}
           </div>
-          <div className="sidebar-security">
-            <ShieldCheck size={18} />
-            <div>
-              <strong>Secure recovery</strong>
-              <span>Encrypted owner-authorized channel</span>
-            </div>
-          </div>
+          <div className="sidebar-security"><ShieldCheck size={18} /><div><strong>Secure recovery</strong><span>Encrypted owner-authorized channel</span></div></div>
         </aside>
 
         <main className="dashboard-main">
-          {!device ? (
-            <section className="glass-panel empty-state">
-              <Smartphone size={36} />
-              <h2>Select a device</h2>
-              <p>Choose an enrolled device to open recovery controls.</p>
-            </section>
-          ) : (
-            <>
-              <section className="device-hero glass-panel">
-                <div className="hero-main">
-                  <div
-                    className={`status-orb ${device.online ? "live" : "offline-orb"}`}
-                  >
-                    <CircleDot size={25} />
-                  </div>
-                  <div>
-                    <div
-                      className={`status-label ${device.online ? "online-text" : "offline-text"}`}
-                    >
-                      {device.online
-                        ? "ONLINE • LIVE CONNECTION"
-                        : "OFFLINE • LAST KNOWN STATE"}
-                    </div>
-                    <h2>
-                      {device.deviceName ||
-                        device.deviceId ||
-                        "Registered device"}
-                    </h2>
-                    <div className="device-id-line">
-                      {device.deviceId || "Registered device"} ·{" "}
-                      {device.deviceType}
-                    </div>
-                  </div>
-                </div>
-                <div className="mode-badge">
-                  <ShieldCheck size={17} /> {device.mode}
-                </div>
-                <div className="metrics-grid">
-                  <div className="metric-card">
-                    <BatteryCharging size={20} />
-                    <div>
-                      <span>Battery</span>
-                      <strong>{device.battery ?? "--"}%</strong>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <Wifi size={20} />
-                    <div>
-                      <span>Network</span>
-                      <strong>{device.network || "Unknown"}</strong>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <Gauge size={20} />
-                    <div>
-                      <span>Last Seen</span>
-                      <strong>{formatTime(device.lastSeen)}</strong>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="section-heading">
+          {!device ? <section className="glass-panel empty-state"><Smartphone size={36} /><h2>Select a device</h2><p>Choose an enrolled device to open recovery controls.</p></section> : <>
+            <section className="device-hero glass-panel">
+              <div className="hero-main">
+                <div className={`status-orb ${device.online ? "live" : "offline-orb"}`}><CircleDot size={25} /></div>
                 <div>
-                  <span className="eyebrow">RECOVERY ACTIONS</span>
-                  <h2>Remote controls</h2>
+                  <div className={`status-label ${device.online ? "online-text" : "offline-text"}`}>{device.online ? "ONLINE • LIVE CONNECTION" : "OFFLINE • LAST KNOWN STATE"}</div>
+                  <h2>{device.deviceName || device.deviceId || "Registered device"}</h2>
+                  <div className="device-id-line">{device.deviceId || "Registered device"} · {device.deviceType}</div>
                 </div>
-                <span>
-                  Commands use the existing allowlisted recovery workflow.
-                </span>
-              </section>
-              <section className="action-grid">
-                <button
-                  disabled={isActionBusy("DEVICE_STATUS")}
-                  onClick={() => action("DEVICE_STATUS")}
-                >
-                  <Smartphone />
-                  <div>
-                    <strong>Device Status</strong>
-                    <span>Refresh device health</span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("GET_LOCATION")}
-                  onClick={() => action("GET_LOCATION")}
-                >
-                  <LocateFixed />
-                  <div>
-                    <strong>Get Location</strong>
-                    <span>
-                      {isActionBusy("GET_LOCATION")
-                        ? "Request in progress…"
-                        : "Request latest position"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RING_DEVICE")}
-                  onClick={() => action("RING_DEVICE")}
-                >
-                  <Volume2 />
-                  <div>
-                    <strong>Ring Device</strong>
-                    <span>Play recovery alert</span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RECOVERY_PHOTO", { camera: "front" })}
-                  onClick={() => action("RECOVERY_PHOTO", { camera: "front" })}
-                >
-                  <Camera />
-                  <div>
-                    <strong>Front Camera</strong>
-                    <span>
-                      {isActionBusy("RECOVERY_PHOTO", { camera: "front" })
-                        ? "Capturing…"
-                        : "Request recovery photo"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RECOVERY_PHOTO", { camera: "rear" })}
-                  onClick={() => action("RECOVERY_PHOTO", { camera: "rear" })}
-                >
-                  <Camera />
-                  <div>
-                    <strong>Back Camera</strong>
-                    <span>
-                      {isActionBusy("RECOVERY_PHOTO", { camera: "rear" })
-                        ? "Capturing…"
-                        : "Request recovery photo"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  className="critical-action"
-                  disabled={isActionBusy("SET_RECOVERY_MODE", {
-                    enabled: true,
-                  })}
-                  onClick={() => action("SET_RECOVERY_MODE", { enabled: true })}
-                >
-                  <ShieldCheck />
-                  <div>
-                    <strong>Enable Lost Mode</strong>
-                    <span>Secure recovery state</span>
-                  </div>
-                </button>
-                <button
-                  className="voice-toggle"
-                  aria-expanded={voiceOpen}
-                  aria-controls="recovery-voice-panel"
-                  onClick={() => setVoiceOpen((open) => !open)}
-                >
-                  <Mic />
-                  <div>
-                    <strong>Voice Input</strong>
-                    <span>Remote recovery voice broadcast</span>
-                  </div>
-                </button>
-              </section>
+              </div>
+              <div className="mode-badge"><ShieldCheck size={17} /> {device.mode}</div>
+              <div className="metrics-grid">
+                <div className="metric-card"><BatteryCharging size={20} /><div><span>Battery</span><strong>{device.battery ?? "--"}%</strong></div></div>
+                <div className="metric-card"><Wifi size={20} /><div><span>Network</span><strong>{device.network || "Unknown"}</strong></div></div>
+                <div className="metric-card"><Gauge size={20} /><div><span>Last Seen</span><strong>{formatTime(device.lastSeen)}</strong></div></div>
+              </div>
+            </section>
 
-              {voiceOpen && (
-                <VoiceInput
-                  key={selected}
-                  deviceName={
-                    devices.find((item) => item.id === selected)?.deviceName ||
-                    "Selected device"
-                  }
-                  disabled={activeCount > 0 || device.id !== selected}
-                  onAction={action}
-                  onClose={() => setVoiceOpen(false)}
-                />
-              )}
+            <section className="section-heading"><div><span className="eyebrow">RECOVERY ACTIONS</span><h2>Remote controls</h2></div><span>Commands use the existing allowlisted recovery workflow.</span></section>
+            <section className="action-grid">
+              <button disabled={isActionBusy("DEVICE_STATUS")} onClick={() => action("DEVICE_STATUS")}><Smartphone /><div><strong>Device Status</strong><span>Refresh device health</span></div></button>
+              <button disabled={isActionBusy("GET_LOCATION")} onClick={() => action("GET_LOCATION")}><LocateFixed /><div><strong>Get Location</strong><span>{isActionBusy("GET_LOCATION") ? "Request in progress…" : "Request latest position"}</span></div></button>
+              <button disabled={isActionBusy("RING_DEVICE")} onClick={() => action("RING_DEVICE")}><Volume2 /><div><strong>Ring Device</strong><span>Play recovery alert</span></div></button>
+              <button disabled={isActionBusy("RECOVERY_PHOTO", { camera: "front" })} onClick={() => action("RECOVERY_PHOTO", { camera: "front" })}><Camera /><div><strong>Front Camera</strong><span>{isActionBusy("RECOVERY_PHOTO", { camera: "front" }) ? "Capturing…" : "Request recovery photo"}</span></div></button>
+              <button disabled={isActionBusy("RECOVERY_PHOTO", { camera: "rear" })} onClick={() => action("RECOVERY_PHOTO", { camera: "rear" })}><Camera /><div><strong>Back Camera</strong><span>{isActionBusy("RECOVERY_PHOTO", { camera: "rear" }) ? "Capturing…" : "Request recovery photo"}</span></div></button>
+              <button className="critical-action" disabled={isActionBusy("SET_RECOVERY_MODE", { enabled: true })} onClick={() => action("SET_RECOVERY_MODE", { enabled: true })}><ShieldCheck /><div><strong>Enable Lost Mode</strong><span>Secure recovery state</span></div></button>
+              <button className="voice-toggle" aria-expanded={voiceOpen} aria-controls="recovery-voice-panel" onClick={() => setVoiceOpen(open => !open)}><Mic /><div><strong>Voice Input</strong><span>Remote recovery voice broadcast</span></div></button>
+            </section>
 
-              {(msg || activeCount > 0) && (
-                <div className="command-banner glass-panel">
-                  <div className="pulse-dot" />
-                  <span>{msg || "Processing…"}</span>
-                  {activeCount > 0 && <RefreshCw className="spin" size={16} />}
+            <section className="glass-panel" aria-label="Device Location Services" style={{ padding: 22, marginTop: 20 }}>
+              <div className="card-heading">
+                <div><span className="eyebrow">DEVICE SYSTEM SETTINGS</span><h2>Location Services</h2></div>
+                <MapPin size={22} />
+              </div>
+              <div className="location-meta">
+                <div>
+                  <span>Current status</span>
+                  <strong>{!device.online ? "Device Offline" : device.locationServices || "Unknown"}</strong>
                 </div>
-              )}
+                <div>
+                  <span>Last device-confirmed status</span>
+                  <strong>{formatTime(device.locationServicesLastConfirmed)}</strong>
+                </div>
+              </div>
+              <p style={{ opacity: 0.75, margin: "12px 0" }}>
+                Reported by the enrolled Android Companion during its last authenticated heartbeat.
+                Global Location Services status is different from Jazz's own location permission.
+              </p>
+              <div className="card-actions">
+                <button className="primary-button" disabled={locationBusy}
+                  onClick={() => void locationControl(true)}>
+                  <MapPin size={17} /> Turn ON Location
+                </button>
+                <button className="secondary-button" disabled={locationBusy}
+                  onClick={() => void locationControl(false)}>
+                  <MapPin size={17} /> Turn OFF Location
+                </button>
+                <button className="secondary-button" disabled={locationBusy || isActionBusy("DEVICE_STATUS") || !device.online}
+                  onClick={() => action("DEVICE_STATUS")}>
+                  <RefreshCw size={17} /> Refresh Status
+                </button>
+              </div>
+              {locationFeedback && <div role="status" aria-live="polite" className="command-banner" style={{ marginTop: 12 }}>
+                {locationBusy && <RefreshCw size={16} className="spin" />}
+                <span>{locationFeedback}</span>
+              </div>}
+              <p style={{ opacity: 0.7, fontSize: 12 }}>
+                Remote ON/OFF requires local owner opt-in and Android Enterprise device-owner privileges.
+                Queued commands do not mean that Location Services changed.
+              </p>
+            </section>
 
-              <section className="recovery-grid">
-                <article className="location-card glass-panel">
-                  <div className="card-heading">
-                    <div>
-                      <span className="eyebrow">LAST KNOWN LOCATION</span>
-                      <h2>Device map</h2>
-                    </div>
-                    <MapPin size={22} />
-                  </div>
-                  {device.location ? (
-                    <>
-                      <div className="map-frame">
-                        <iframe
-                          title="Last known device location"
-                          src={mapEmbedUrl(device.location)}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          sandbox="allow-scripts allow-same-origin"
-                        />
-                        <div className="map-overlay">
-                          <Navigation size={15} /> Last known position
-                        </div>
-                      </div>
-                      <div className="location-meta">
-                        <div>
-                          <span>Coordinates</span>
-                          <strong>
-                            {device.location.latitude.toFixed(6)},{" "}
-                            {device.location.longitude.toFixed(6)}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Accuracy</span>
-                          <strong>
-                            {device.location.accuracyMeters ?? "--"} m
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Location time</span>
-                          <strong>
-                            {formatTime(device.location.timestamp)}
-                          </strong>
-                        </div>
-                      </div>
-                      <div className="card-actions">
-                        <a
-                          className="primary-button"
-                          target="_blank"
-                          rel="noreferrer"
-                          href={googleMapsUrl(device.location)}
-                        >
-                          <ExternalLink size={17} /> Open in Maps
-                        </a>
-                        <button
-                          className="secondary-button"
-                          onClick={shareLocation}
-                        >
-                          <Navigation size={17} /> Share Location
-                        </button>
-                        <button
-                          className="secondary-button"
-                          onClick={downloadReport}
-                        >
-                          <Download size={17} /> Download Report
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty-state">
-                      <Crosshair size={30} />
-                      <h3>No location yet</h3>
-                      <p>
-                        Use Get Location to request the latest available
-                        position.
-                      </p>
-                    </div>
-                  )}
-                </article>
+            {voiceOpen && <VoiceInput
+              key={selected}
+              deviceName={devices.find(item => item.id === selected)?.deviceName || "Selected device"}
+              disabled={activeCount > 0 || device.id !== selected}
+              onAction={action}
+              onClose={() => setVoiceOpen(false)}
+            />}
 
-                <article className="photo-card glass-panel">
-                  <div className="card-heading">
-                    <div>
-                      <span className="eyebrow">RECOVERY EVIDENCE</span>
-                      <h2>Latest recovery photo</h2>
-                    </div>
-                    <Camera size={22} />
+            {(msg || activeCount > 0) && <div className="command-banner glass-panel"><div className="pulse-dot" /><span>{msg || "Processing…"}</span>{activeCount > 0 && <RefreshCw className="spin" size={16} />}</div>}
+
+            <section className="recovery-grid">
+              <article className="location-card glass-panel">
+                <div className="card-heading">
+                  <div><span className="eyebrow">LAST KNOWN LOCATION</span><h2>Device map</h2></div>
+                  <MapPin size={22} />
+                </div>
+                {device.location ? <>
+                  <div className="map-frame">
+                    <iframe
+                      title="Last known device location"
+                      src={mapEmbedUrl(device.location)}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      sandbox="allow-scripts allow-same-origin"
+                    />
+                    <div className="map-overlay"><Navigation size={15} /> Last known position</div>
                   </div>
-                  {device.photo ? (
-                    <>
-                      <div className="photo-frame">
-                        <img src={device.photo.dataUrl} alt="Latest recovery" />
-                      </div>
-                      <div className="photo-meta">
-                        <span>{device.photo.camera || "camera"} camera</span>
-                        <span>{formatTime(device.photo.timestamp)}</span>
-                      </div>
-                      <div className="card-actions">
-                        <a
-                          className="primary-button"
-                          href={device.photo.dataUrl}
-                          download={`jazz-recovery-${device.photo.camera || "photo"}.jpg`}
-                        >
-                          <Download size={17} /> Download Recovery Photo
-                        </a>
-                        <button
-                          className="secondary-button"
-                          onClick={downloadReport}
-                        >
-                          <Download size={17} /> Download Recovery Report
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty-state photo-empty">
-                      <Camera size={32} />
-                      <h3>No recovery photo yet</h3>
-                      <p>
-                        Request the front or back camera using the recovery
-                        controls above.
-                      </p>
-                    </div>
-                  )}
-                </article>
-              </section>
-            </>
-          )}
+                  <div className="location-meta">
+                    <div><span>Coordinates</span><strong>{device.location.latitude.toFixed(6)}, {device.location.longitude.toFixed(6)}</strong></div>
+                    <div><span>Accuracy</span><strong>{device.location.accuracyMeters ?? "--"} m</strong></div>
+                    <div><span>Location time</span><strong>{formatTime(device.location.timestamp)}</strong></div>
+                  </div>
+                  <div className="card-actions">
+                    <a className="primary-button" target="_blank" rel="noreferrer" href={googleMapsUrl(device.location)}><ExternalLink size={17} /> Open in Maps</a>
+                    <button className="secondary-button" onClick={shareLocation}><Navigation size={17} /> Share Location</button>
+                    <button className="secondary-button" onClick={downloadReport}><Download size={17} /> Download Report</button>
+                  </div>
+                </> : <div className="empty-state"><Crosshair size={30} /><h3>No location yet</h3><p>Use Get Location to request the latest available position.</p></div>}
+              </article>
+
+              <article className="photo-card glass-panel">
+                <div className="card-heading">
+                  <div><span className="eyebrow">RECOVERY EVIDENCE</span><h2>Latest recovery photo</h2></div>
+                  <Camera size={22} />
+                </div>
+                {device.photo ? <>
+                  <div className="photo-frame"><img src={device.photo.dataUrl} alt="Latest recovery" /></div>
+                  <div className="photo-meta"><span>{device.photo.camera || "camera"} camera</span><span>{formatTime(device.photo.timestamp)}</span></div>
+                  <div className="card-actions">
+                    <a className="primary-button" href={device.photo.dataUrl} download={`jazz-recovery-${device.photo.camera || "photo"}.jpg`}><Download size={17} /> Download Recovery Photo</a>
+                    <button className="secondary-button" onClick={downloadReport}><Download size={17} /> Download Recovery Report</button>
+                  </div>
+                </> : <div className="empty-state photo-empty"><Camera size={32} /><h3>No recovery photo yet</h3><p>Request the front or back camera using the recovery controls above.</p></div>}
+              </article>
+            </section>
+          </>}
         </main>
       </div>
 
-      <footer className="site-footer">
-        <span>Jazz Device Recovery</span>
-        <span>Developed by 😈gunakarna😈</span>
-      </footer>
+      <footer className="site-footer"><span>Jazz Device Recovery</span><span>Developed by 😈gunakarna😈</span></footer>
     </div>
   );
 }
