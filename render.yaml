@@ -1,0 +1,20 @@
+# Jazz Lost Mode browser app only. Do not add any backend or SQLite data here.
+# Existing frontend source is at this repository's root (not apps/lost-mode-web).
+services:
+  - type: web
+    name: jazz-recovery-web
+    runtime: static
+    branch: render-web
+    buildCommand: npm install --no-audit --no-fund && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: VITE_API_BASE_URL
+        value: ""
+# IMPORTANT: After provisioning your separate HTTPS backend, in this static
+# site's Render Dashboard add a Rewrite for /api/* to:
+# https://YOUR-ACTUAL-BACKEND.onrender.com/api/*
+# This is a SAME-ORIGIN proxy, required to keep browser session cookies on the
+# website origin. Do not put a fake backend URL in this deployment blueprint.
+# If you add an SPA fallback /* -> /index.html, put the API rewrite first.
