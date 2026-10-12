@@ -1,0 +1,23 @@
+# Local dependencies, build outputs, and secrets (never commit to GitHub)
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local tooling
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Recovery data belongs only on the backend's private persistent storage
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
