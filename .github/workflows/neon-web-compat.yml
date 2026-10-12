@@ -1,0 +1,52 @@
+name: Jazz Recovery Web to PostgreSQL API Compatibility
+on:
+  push:
+    branches: [feature/neon-web-compat-20261012]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  web-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Verify recovery secrets are not tracked
+        shell: bash
+        run: |
+          if git ls-files -- '*.db' '*.db-wal' '*.db-shm' '*.sqlite' '.env' '.env.local' | grep -q .; then
+            echo "A private database or environment file was committed to the web repository."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify browser API contract and original recovery controls
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import assert from "node:assert/strict";
+          const ui = fs.readFileSync("src/main.tsx","utf8");
+          const routes = [
+            "/api/auth/login",
+            "/api/auth/session",
+            "/api/auth/logout",
+            "/api/devices",
+            "/actions",
+            "/commands/"
+          ];
+          for (const route of routes) {
+            assert.ok(ui.includes(route), "Missing browser API route: " + route);
+          }
+          for (const action of ["RING_DEVICE","RECOVERY_PHOTO","GET_LOCATION","LOCATION_ENABLE","LOCATION_DISABLE","PLAY_VOICE_MESSAGE"]) {
+            assert.ok(ui.includes(action) || fs.readFileSync("src/voice/VoiceInput.tsx","utf8").includes(action), "Missing recovery action: " + action);
+          }
+          assert.match(ui, /credentials:\s*["']include["']/, "Owner session cookies must be included");
+          assert.match(ui, /VITE_API_BASE_URL/, "Browser API target must be configurable");
+          console.log("Browser API contract and recovery controls retained.");
+          NODE
+      - name: Build website for Render
+        run: npm run build
+      - name: Confirm static output exists
+        run: test -s dist/index.html
