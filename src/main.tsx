@@ -443,7 +443,7 @@ function App() {
       <header className="topbar glass-panel">
         <div className="brand-block">
           <div className="brand-mark small-mark"><Sparkles size={20} /></div>
-          <div><div className="eyebrow">JAZZ AI ASSISTANT</div><h1>Lost Mode Command Center</h1></div>
+          <div><div className="eyebrow">JAZZ RECOVERY</div><h1>Lost Mode Command Center</h1></div>
         </div>
         <div className="topbar-actions">
           <div className="fleet-pill"><Radio size={16} /><span>{onlineCount}/{devices.length} online</span></div>
@@ -598,9 +598,13 @@ function App() {
             </section>
           </>}
         </main>
-      </div>
+      </div><footer className="site-footer">
+        <span className="footer-brand">Jazz Device Recovery</span>
 
-      <footer className="site-footer"><span>Jazz Device Recovery</span><span>Developed by 😈gunakarna😈</span></footer>
+        <span className="developer-credit">
+          Developed by <span className="developer-name">😈 gunakarna 😈</span>
+        </span>
+      </footer>
     </div>
   );
 }
