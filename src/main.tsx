@@ -19,7 +19,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Smartphone,
-  Sparkles,
   Volume2,
   Wifi,
 } from "lucide-react";
@@ -214,8 +213,13 @@ function Login({ done }: { done: () => void }) {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
       <section className="auth-card glass-panel">
-        <div className="brand-mark">
-          <Sparkles size={28} />
+        <div className="brand-logo">
+          <img
+            src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png"
+            alt="Jazz Logo"
+            width={95}
+            height={95}
+          />
         </div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
         <h1>Lost Mode</h1>
@@ -267,7 +271,7 @@ function Login({ done }: { done: () => void }) {
           <ShieldCheck size={16} /> Owner-only authenticated recovery portal
         </div>
       </section>
- <footer className="site-footer">
+      <footer className="site-footer">
         <span className="footer-brand">Jazz Device Recovery</span>
 
         <span className="developer-credit">
@@ -554,8 +558,13 @@ function App() {
 
       <header className="topbar glass-panel">
         <div className="brand-block">
-          <div className="brand-mark small-mark">
-            <Sparkles size={20} />
+          <div className="brand-logo">
+            <img
+              src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png"
+              alt="Jazz Logo"
+              width={95}
+              height={95}
+            />
           </div>
           <div>
             <div className="eyebrow">JAZZ RECOVERY</div>
