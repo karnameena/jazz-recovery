@@ -2,7 +2,7 @@
 
 This repository is the **standalone React/Vite web dashboard** for Jazz Lost Mode. It was cross-checked against the latest `apps/lost-mode-web` directory in `karnameena/Jazz-AI-Assistant` (branch `feature/jazz-launcher-icon-repair-20261012`): the complete existing website source matches, including the device map, ring, photo, voice, recovery workflow, and owner-gated Location Services ON/OFF controls.
 
-The **server is not deployed from this repository**. Its separate GitHub repository is [jazz-recovery-server](https://github.com/karnameena/jazz-recovery-server), deployment branch `render-backend`.
+The **server is not deployed from this repository**. Its separate GitHub repository is [jazz-recovery-server](https://github.com/karnameena/jazz-recovery-server), production deployment branch `render-backend`. A PostgreSQL adaptation is currently being developed on `feature/neon-postgres-migration-20261012` (draft PR #1) and has **not** been deployed.
 
 ## Repository structure
 
@@ -56,9 +56,28 @@ For the backend, ensure `LOST_MODE_PUBLIC_ORIGINS` contains your exact HTTPS web
 
 ### Missing username or invalid password?
 
-The frontend does not contain accounts and it cannot reset credentials. Accounts and enrolled devices reside exclusively in the backend's SQLite database. If you deploy the backend code with an empty/ephemeral database, correct old credentials will return `Invalid username or password` (401). Import or restore your existing database securely onto a **persistent** backend disk, do not commit it to GitHub, and avoid inadvertently overwriting another active server database.
+The frontend does not contain accounts and it cannot reset credentials. Accounts and enrolled devices reside exclusively in the **backend database**, never in this React website. The existing backend uses SQLite, while the PostgreSQL feature branch is intended for Render Free + a private persistent Neon PostgreSQL database. If the backend runs with an empty database, correct old credentials still return `Invalid username or password` (HTTP 401). Do not create a second owner account or reset a user's password to work around that: perform a verified, private migration from the authoritative SQLite backup to PostgreSQL and confirm the device credential hashes are preserved. Do not upload either database or the Neon connection URL to GitHub, the frontend, or Render Static Site environment variables.
 
 The previous `jazz-recovery-server` repository's public Git history contained committed SQLite databases. Removing them from the latest branch does not erase historic exposure: make that repository private, clean up its history and rotate affected credentials before activating public lost-device recovery.
+
+### Render Free + Neon PostgreSQL — frontend compatibility
+
+**No frontend API code changes are necessary.** This browser app calls the same authenticated routes and uses the same JSON contracts with the SQLite backend and the proposed PostgreSQL backend:
+
+| Website request | Backend behavior |
+|---|---|
+| `POST /api/auth/login` | Owner login and HttpOnly session cookie |
+| `GET /api/auth/session` | Verify current browser session |
+| `GET /api/devices` | List only the signed-in owner's devices |
+| `GET /api/devices/:id` | Return state and recovery data |
+| `POST /api/devices/:id/actions` | Queue allowed recovery commands |
+| `GET /api/devices/:id/commands/:uuid` | Return confirmed/failed Location Services command status |
+| `POST /api/auth/logout` | Log out and clear the browser session |
+
+- The browser NEVER connects to Neon. Only the private backend has `DATABASE_URL`. Don't place it in `VITE_API_BASE_URL`.
+- For same-origin session cookies, leave `VITE_API_BASE_URL` blank and configure the existing Render Static Site `/api/*` rewrite to the **actual deployed backend** HTTPS URL. Set the backend's `LOST_MODE_PUBLIC_ORIGINS` to the website's exact HTTPS origin.
+- This staging documentation branch does not alter `render-web` or production deployments. Switching the backend to the PostgreSQL feature branch must wait for a separate explicit approval and real account migration.
+- Render Free may sleep when idle; website requests can be delayed on cold starts. A successful static build does not verify live server availability.
 
 ### Verify
 
@@ -88,4 +107,4 @@ Deploys automatically when this repository's `render-web` branch updates, if you
 
 ## Source integration and rollback
 
-The existing web source was already identical to the latest monorepo web source at the time of setup, modulo newline encoding. This deployment branch only adds Render configuration, documentation, CI and ignore rules. Existing website behavior and recovered phone workflows are unchanged. The prior `main` branch and the main Jazz project are untouched.
+The existing web source was already identical to the latest monorepo web source at the time of setup, modulo newline encoding. This deployment branch only adds Render configuration, documentation, CI and ignore rules. Existing website behavior and recovered phone workflows are unchanged. The prior `main` branch and the main Jazz project are untouched. This Neon staging documentation update is isolated on its own feature branch and does not alter the existing website behavior.
