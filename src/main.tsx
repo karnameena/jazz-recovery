@@ -267,7 +267,13 @@ function Login({ done }: { done: () => void }) {
           <ShieldCheck size={16} /> Owner-only authenticated recovery portal
         </div>
       </section>
-      <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
+ <footer className="site-footer">
+        <span className="footer-brand">Jazz Device Recovery</span>
+
+        <span className="developer-credit">
+          Developed by <span className="developer-name">😈 gunakarna 😈</span>
+        </span>
+      </footer>
     </main>
   );
 }
