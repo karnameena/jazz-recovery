@@ -103,7 +103,7 @@
     padding: 12px;
   }
   .topbar {
-    top: 8px;
+    top: 0;
     margin-bottom: 14px;
     padding: 12px 13px;
     align-items: flex-start;
@@ -171,7 +171,7 @@
     padding: 8px;
   }
   .topbar {
-    top: 6px;
+    top: 0;
     border-radius: 18px;
     padding: 10px 11px;
   }
@@ -259,7 +259,7 @@
 
 @media (max-width: 430px) {
   .topbar {
-    top: 4px;
+    top: 0;
   }
   .brand-block h1 {
     max-width: 58vw;
@@ -309,7 +309,7 @@
 
 @media (orientation: landscape) and (max-height: 560px) {
   .topbar {
-    top: 4px;
+    top: 0;
     padding-top: 8px;
     padding-bottom: 8px;
   }
