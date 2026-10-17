@@ -198,7 +198,7 @@ function Login({ done }: { done: () => void }) {
     if (passwordRef.current) passwordRef.current.value = "";
 
     try {
-      await api("/api/auth/login", { method: "POST", body });
+      await api("/api//login", { method: "POST", body });
       form.reset();
       done();
     } catch (err) {
@@ -209,10 +209,10 @@ function Login({ done }: { done: () => void }) {
   }
 
   return (
-    <main className="auth-shell">
+    <main className="-shell">
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
-      <section className="auth-card glass-panel">
+      <section className="-card glass-panel">
         <div className="brand-logo">
           <img
             src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png"
@@ -223,10 +223,10 @@ function Login({ done }: { done: () => void }) {
         </div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
         <h1>Lost Mode</h1>
-        <p className="auth-subtitle">
+        <p className="-subtitle">
           Secure access to your registered recovery devices.
         </p>
-        <form onSubmit={submit} className="auth-form" autoComplete="on">
+        <form onSubmit={submit} className="-form" autoComplete="on">
           <label>
             <span>Username</span>
             <input
@@ -268,7 +268,7 @@ function Login({ done }: { done: () => void }) {
           </button>
         </form>
         <div className="secure-note">
-          <ShieldCheck size={16} /> Owner-only authenticated recovery portal
+          <ShieldCheck size={16} /> Owner-only enticated recovery portal
         </div>
       </section>
       <footer className="site-footer">
@@ -311,7 +311,7 @@ function App() {
   }
 
   useEffect(() => {
-    api("/api/auth/session")
+    api("/api//session")
       .then(() => setLogin(true))
       .catch(() => setLogin(false))
       .finally(() => setReady(true));
@@ -412,7 +412,7 @@ function App() {
     const desired = enabled ? "ON" : "OFF";
     setLocationBusy(true);
     setLocationFeedback(
-      "Sending owner-authorized Location Services " + desired + " request…",
+      "Sending owner-orized Location Services " + desired + " request…",
     );
     try {
       const queued = await api(`/api/devices/${selectedAtStart}/actions`, {
@@ -483,7 +483,7 @@ function App() {
     setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
-    await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
+    await api("/api//logout", { method: "POST", body: "{}" }).catch(
       () => {},
     );
     setLogin(false);
@@ -637,7 +637,7 @@ function App() {
             <ShieldCheck size={18} />
             <div>
               <strong>Secure recovery</strong>
-              <span>Encrypted owner-authorized channel</span>
+              <span>Encrypted owner-orized channel</span>
             </div>
           </div>
         </aside>
@@ -833,9 +833,7 @@ function App() {
                   </div>
                 </div>
                 <p style={{ opacity: 0.75, margin: "12px 0" }}>
-                  Reported by the enrolled Android Companion during its last
-                  authenticated heartbeat. Global Location Services status is
-                  different from Jazz's own location permission.
+                If Location is turned off, click “Turn On” to enable it and get the device’s exact location.
                 </p>
                 <div className="card-actions">
                   <button
@@ -877,9 +875,7 @@ function App() {
                 )}
                 <p style={{ opacity: 0.7, fontSize: 12 }}>
                   Remote ON/OFF requires local opt-in and either Android
-                  Enterprise device-owner authorization or ADB-granted
-                  WRITE_SECURE_SETTINGS (if supported by the phone). Queued
-                  commands do not mean that Location Services changed.
+                  Enterprise device-owner authorizations changed.
                 </p>
               </section>
 
