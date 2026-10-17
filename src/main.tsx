@@ -198,7 +198,7 @@ function Login({ done }: { done: () => void }) {
     if (passwordRef.current) passwordRef.current.value = "";
 
     try {
-      await api("/api//login", { method: "POST", body });
+      await api("/api/auth/login", { method: "POST", body });
       form.reset();
       done();
     } catch (err) {
@@ -209,10 +209,10 @@ function Login({ done }: { done: () => void }) {
   }
 
   return (
-    <main className="-shell">
+    <main className="auth-shell">
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
-      <section className="-card glass-panel">
+      <section className="auth-card glass-panel">
         <div className="brand-logo">
           <img
             src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png"
@@ -223,10 +223,10 @@ function Login({ done }: { done: () => void }) {
         </div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
         <h1>Lost Mode</h1>
-        <p className="-subtitle">
+        <p className="auth-subtitle">
           Secure access to your registered recovery devices.
         </p>
-        <form onSubmit={submit} className="-form" autoComplete="on">
+        <form onSubmit={submit} className="auth-form" autoComplete="on">
           <label>
             <span>Username</span>
             <input
@@ -268,7 +268,7 @@ function Login({ done }: { done: () => void }) {
           </button>
         </form>
         <div className="secure-note">
-          <ShieldCheck size={16} /> Owner-only enticated recovery portal
+          <ShieldCheck size={16} /> Owner-only authenticated recovery portal
         </div>
       </section>
       <footer className="site-footer">
@@ -311,7 +311,7 @@ function App() {
   }
 
   useEffect(() => {
-    api("/api//session")
+    api("/api/auth/session")
       .then(() => setLogin(true))
       .catch(() => setLogin(false))
       .finally(() => setReady(true));
@@ -412,7 +412,7 @@ function App() {
     const desired = enabled ? "ON" : "OFF";
     setLocationBusy(true);
     setLocationFeedback(
-      "Sending owner-orized Location Services " + desired + " request…",
+      "Sending owner-authorized Location Services " + desired + " request…",
     );
     try {
       const queued = await api(`/api/devices/${selectedAtStart}/actions`, {
@@ -483,7 +483,7 @@ function App() {
     setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
-    await api("/api//logout", { method: "POST", body: "{}" }).catch(
+    await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
       () => {},
     );
     setLogin(false);
@@ -637,7 +637,7 @@ function App() {
             <ShieldCheck size={18} />
             <div>
               <strong>Secure recovery</strong>
-              <span>Encrypted owner-orized channel</span>
+              <span>Encrypted owner-authorized channel</span>
             </div>
           </div>
         </aside>
@@ -833,7 +833,8 @@ function App() {
                   </div>
                 </div>
                 <p style={{ opacity: 0.75, margin: "12px 0" }}>
-                If Location is turned off, click “Turn On” to enable it and get the device’s exact location.
+                  If Location is turned off, click “Turn On” to enable it and
+                  get the device’s exact location.
                 </p>
                 <div className="card-actions">
                   <button
@@ -874,8 +875,8 @@ function App() {
                   </div>
                 )}
                 <p style={{ opacity: 0.7, fontSize: 12 }}>
-                  Remote ON/OFF requires local opt-in and either Android
-                  Enterprise device-owner authorizations changed.
+                  Remote ON/OFF requires local opt-in and either Android that
+                  Location Services changed.
                 </p>
               </section>
 
