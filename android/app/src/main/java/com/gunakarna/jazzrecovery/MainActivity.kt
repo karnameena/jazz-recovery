@@ -105,6 +105,21 @@ class MainActivity : Activity() {
                     .put("charging", bm.isCharging).put("network", "UNKNOWN"))
             request("POST", "/android/device/heartbeat", data, true)
         }
+        action("Enable Recovery Readiness") {
+            val savedToken = prefs.getString("secret", null)
+            val savedServer = prefs.getString("server", "") ?: ""
+            if (!savedServer.startsWith("https://") || savedToken.isNullOrBlank()) show("Save HTTPS server URL and generate the device token first")
+            else if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) show("Grant Camera Permission first")
+            else {
+                val intent = Intent(this, RecoveryAgentService::class.java)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+                show("Recovery readiness started. Keep the ongoing notification enabled.")
+            }
+        }
+        action("Stop Recovery Readiness") {
+            stopService(Intent(this, RecoveryAgentService::class.java))
+            show("Recovery readiness stopped")
+        }
         label("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
         action("Grant Camera Permission") {
             if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
