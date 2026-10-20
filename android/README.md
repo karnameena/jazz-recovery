@@ -28,7 +28,7 @@ The service must be started by the owner while the app is visible, after grantin
 Open android/ in Android Studio with JDK 17 and Android SDK 35 installed, sync Gradle, then run Build > Build APK(s). The project does not currently include a Gradle wrapper. No APK build or real-device integration test has been completed in this environment.
 
 ## Important backend note
-The current server source uses Node's node:sqlite driver and SQLite migrations. It is not yet a Neon/PostgreSQL implementation even if a Neon database URL exists in Render settings. Do not deploy this feature branch to production until the actual Render database configuration is reconciled and the enrollment/command flow is tested on a disposable environment.
+The server repository has an existing opt-in Neon/PostgreSQL feature branch, but it is still a draft proposal and not the live production configuration. The enrollment server PR targets that PostgreSQL branch. Do not merge or deploy to production until both PRs are reviewed, the Render service is confirmed to run with JAZZ_DB_ENGINE=postgres and a private DATABASE_URL, and the end-to-end enrollment/command flow is tested.
 
 ## Existing workflows
 All changes are on a feature branch and proposed through a draft pull request. Do not reuse Android Companion credentials. No existing main-branch code has been merged or deployed by this change.
