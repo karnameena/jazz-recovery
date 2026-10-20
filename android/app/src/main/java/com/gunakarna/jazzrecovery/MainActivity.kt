@@ -110,7 +110,10 @@ class MainActivity : Activity() {
             val savedServer = prefs.getString("server", "") ?: ""
             if (!savedServer.startsWith("https://") || savedToken.isNullOrBlank()) show("Save HTTPS server URL and generate the device token first")
             else if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) show("Grant Camera Permission first")
-            else {
+            else if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
+                show("Allow notifications, then tap Enable Recovery Readiness again")
+            } else {
                 val intent = Intent(this, RecoveryAgentService::class.java)
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
                 show("Recovery readiness started. Keep the ongoing notification enabled.")
