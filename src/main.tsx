@@ -154,6 +154,7 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
 }
 
 function Login({ done }: { done: () => void }) {
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -163,33 +164,35 @@ function Login({ done }: { done: () => void }) {
     if (submitting) return;
     setError("");
     setSubmitting(true);
-
     const form = event.currentTarget;
     const fields = new FormData(form);
     const username = String(fields.get("username") || "").trim();
-    let password = String(fields.get("password") || "");
-
-    if (!username || !password) {
-      password = "";
-      if (passwordRef.current) passwordRef.current.value = "";
-      setError("Enter your username and password.");
-      setSubmitting(false);
-      return;
-    }
-
-    // Serialize once, then immediately clear the password field and local variable.
-    // A password must exist in browser memory while it is being submitted, but it is
-    // never placed in React state, localStorage, sessionStorage, or the URL.
-    const body = JSON.stringify({ username, password });
-    password = "";
-    if (passwordRef.current) passwordRef.current.value = "";
-
+    const password = String(fields.get("password") || "");
     try {
-      await api("/api/auth/login", { method: "POST", body });
+      if (!username || !password) throw new Error("Enter your username and password.");
+      if (registering) {
+        const confirmPassword = String(fields.get("confirmPassword") || "");
+        if (password !== confirmPassword) throw new Error("Passwords do not match.");
+        const deviceName = String(fields.get("deviceName") || "").trim();
+        const imei = String(fields.get("imei") || "").trim();
+        const deviceId = String(fields.get("deviceId") || "").trim();
+        const deviceToken = String(fields.get("deviceToken") || "").trim();
+        if (!deviceName || !imei || !deviceId || !deviceToken) {
+          throw new Error("Enter the device details and copy the device ID and token from the Jazz Recovery app.");
+        }
+        await api("/api/auth/register", {
+          method: "POST",
+          body: JSON.stringify({ username, password, deviceName, imei, deviceId, deviceToken }),
+        });
+      } else {
+        const body = JSON.stringify({ username, password });
+        if (passwordRef.current) passwordRef.current.value = "";
+        await api("/api/auth/login", { method: "POST", body });
+      }
       form.reset();
       done();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : (registering ? "Registration failed" : "Login failed"));
     } finally {
       setSubmitting(false);
     }
@@ -202,23 +205,29 @@ function Login({ done }: { done: () => void }) {
       <section className="auth-card glass-panel">
         <div className="brand-mark"><Sparkles size={28} /></div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
-        <h1>Lost Mode</h1>
-        <p className="auth-subtitle">Secure access to your registered recovery devices.</p>
+        <h1>{registering ? "Create your account" : "Lost Mode"}</h1>
+        <p className="auth-subtitle">{registering ? "Register your owner account and pair this Android device." : "Secure access to your registered recovery devices."}</p>
         <form onSubmit={submit} className="auth-form" autoComplete="on">
-          <label>
-            <span>Username</span>
-            <input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" required />
-          </label>
-          <label>
-            <span>Password</span>
-            <input ref={passwordRef} name="password" autoComplete="current-password" type="password" placeholder="Enter password" required />
-          </label>
+          <label><span>Username</span><input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" minLength={3} maxLength={64} required /></label>
+          <label><span>Password</span><input ref={passwordRef} name="password" autoComplete={registering ? "new-password" : "current-password"} type="password" placeholder={registering ? "At least 12 characters, upper/lowercase and a number" : "Enter password"} minLength={registering ? 12 : undefined} required /></label>
+          {registering && <>
+            <label><span>Confirm password</span><input name="confirmPassword" autoComplete="new-password" type="password" placeholder="Re-enter password" minLength={12} required /></label>
+            <div className="eyebrow" style={{ marginTop: 8 }}>DEVICE ENROLLMENT</div>
+            <label><span>Device name</span><input name="deviceName" autoComplete="off" placeholder="e.g. My OnePlus" maxLength={80} required /></label>
+            <label><span>IMEI</span><input name="imei" inputMode="numeric" autoComplete="off" placeholder="14–16 digit IMEI" maxLength={20} required /></label>
+            <label><span>Device ID from app</span><input name="deviceId" autoComplete="off" placeholder="Copy device ID from Jazz Recovery" required /></label>
+            <label><span>Device token from app</span><input name="deviceToken" autoComplete="off" type="password" placeholder="Paste generated device token" required /></label>
+            <p className="auth-subtitle">The server stores only a hash of the device token. Keep the token private.</p>
+          </>}
           {error && <div className="error-banner" role="alert">{error}</div>}
           <button className="primary-button full-width" type="submit" disabled={submitting}>
             {submitting ? <RefreshCw className="spin" size={18} /> : <LockKeyhole size={18} />}
-            {submitting ? "Verifying securely…" : "Enter Lost Mode"}
+            {submitting ? "Please wait…" : registering ? "Register and pair device" : "Enter Lost Mode"}
           </button>
         </form>
+        <button className="ghost-button full-width" style={{ marginTop: 12, justifyContent: "center" }} type="button" onClick={() => { setRegistering(value => !value); setError(""); }}>
+          {registering ? "Already registered? Sign in" : "New here? Register a device"}
+        </button>
         <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
       </section>
       <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
