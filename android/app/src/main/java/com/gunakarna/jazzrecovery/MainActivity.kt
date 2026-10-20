@@ -9,6 +9,8 @@ import android.view.ViewGroup
 import android.widget.*
 import android.content.Context
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.provider.Settings
 import android.Manifest
 import android.content.pm.PackageManager
@@ -30,7 +32,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
     private lateinit var status: TextView
     private lateinit var server: EditText
-    private lateinit var credential: EditText
+    private lateinit var tokenDisplay: EditText
     private val deviceId by lazy {
         prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
             prefs.edit().putString("device_id", it).apply()
@@ -66,16 +68,33 @@ class MainActivity : Activity() {
             else { prefs.edit().putString("server", value).apply(); show("Server URL saved") }
         }
         action("Test /health") { request("GET", "/health", null, false) }
-        label("Pairing: use create-device.mjs with this installation ID, then enter its one-time credential.")
-        credential = field("Device credential", "")
-        credential.inputType = 129
-        action("Save encrypted credential") {
-            val value = credential.text.toString().trim()
-            if (value.length < 16) show("Credential missing")
-            else try {
-                prefs.edit().putString("secret", encrypt(value)).apply()
-                credential.text.clear(); show("Credential stored using Android Keystore")
-            } catch (e: Exception) { show("Credential storage failed") }
+        label("Pair this app from the Jazz Recovery website")
+        label("Copy both values below into the website registration form. The token is stored encrypted with Android Keystore.")
+        label("Device ID")
+        val idDisplay = field("Device ID", deviceId)
+        idDisplay.isFocusable = false
+        action("Copy Device ID") { copyText(deviceId); show("Device ID copied") }
+        label("One-time device token")
+        tokenDisplay = field("Generate a token before website registration", "")
+        tokenDisplay.inputType = 129
+        tokenDisplay.isFocusable = false
+        action("Generate / Show Device Token") {
+            try {
+                val existing = prefs.getString("secret", null)
+                val token = if (!existing.isNullOrBlank()) decrypt(existing) else {
+                    val bytes = ByteArray(32)
+                    java.security.SecureRandom().nextBytes(bytes)
+                    android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+                        .also { prefs.edit().putString("secret", encrypt(it)).apply() }
+                }
+                tokenDisplay.setText(token)
+                show("Token ready. Register this exact token on the website; do not regenerate after pairing.")
+            } catch (e: Exception) { show("Token generation or secure storage failed") }
+        }
+        action("Copy Device Token") {
+            val token = tokenDisplay.text.toString()
+            if (token.isBlank()) show("Generate / show the token first")
+            else { copyText(token); show("Device token copied. Keep it private.") }
         }
         action("Send device heartbeat") {
             val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
@@ -87,8 +106,23 @@ class MainActivity : Activity() {
             request("POST", "/android/device/heartbeat", data, true)
         }
         label("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
-        action("Request location permission") {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 100)
+        action("Grant Camera Permission") {
+            if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA), 101)
+            } else show("Camera permission is already granted")
+        }
+        action("Grant Location Permission") {
+            if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 100)
+            } else show("Location permission is already granted")
+        }
+        action("Grant Bluetooth Permission / Setup") {
+            if (Build.VERSION.SDK_INT >= 31) {
+                val needed = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+                    .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()
+                if (needed.isNotEmpty()) requestPermissions(needed, 102)
+                else startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            } else startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
         action("Open location settings") { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
         action("Show cached location") {
@@ -104,6 +138,10 @@ class MainActivity : Activity() {
         root.addView(status)
     }
     private fun show(value: String) { status.text = value }
+    private fun copyText(value: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Jazz Recovery", value))
+    }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("jazz_recovery_key_v1", null) as? SecretKey)?.let { return it }
