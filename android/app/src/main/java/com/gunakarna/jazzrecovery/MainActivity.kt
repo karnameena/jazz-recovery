@@ -524,7 +524,12 @@ class MainActivity : Activity() {
     private fun permissionLine(parent: LinearLayout, label: String, permission: String) {
         val granted = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(7), 0, dp(7)) }
-        addText(row, label, 13f, white, false)
+        val labelView = TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTextColor(white)
+        }
+        row.addView(labelView, LinearLayout.LayoutParams(0, -2, 1f))
         val state = TextView(this).apply {
             text = if (granted) "GRANTED" else "NOT GRANTED"
             textSize = 10f; typeface = Typeface.DEFAULT_BOLD
