@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     }
 
     private enum class Screen { HOME, FIND_PHONE, SUPPORT, URL_TOKENS, PERMISSIONS, CODES, LOCATION, READINESS, BLUETOOTH, CAMERA }
+    private data class Feature(val icon: String, val title: String, val subtitle: String, val action: () -> Unit)
 
     private val navy = Color.rgb(5, 10, 27)
     private val panel = Color.rgb(11, 20, 43)
@@ -160,19 +161,19 @@ class MainActivity : Activity() {
         addText(content, "Recovery tools", 20f, white, true, top = 0, bottom = 4)
         addText(content, "Quick access to your device's existing security features.", 13f, muted, false, bottom = 12)
         val gridRows = listOf(
-            listOf(Triple("⌘", "URL Tokens", "View & Manage") { render(Screen.URL_TOKENS) },
-                Triple("◈", "Permissions", "Grant & Control") { render(Screen.PERMISSIONS) }),
-            listOf(Triple("▦", "Generate Codes", "Security Codes") { render(Screen.CODES) },
-                Triple("⌖", "Location", "View Location") { render(Screen.LOCATION) }),
-            listOf(Triple("◉", "Recovery", "Readiness") { render(Screen.READINESS) },
-                Triple("ᛒ", "Bluetooth", "Permissions") { render(Screen.BLUETOOTH) }),
-            listOf(Triple("◉", "Camera", "Permissions") { render(Screen.CAMERA) },
-                Triple("⌁", "Show Cached", "Location") { showCachedLocation() })
+            listOf(Feature("⌘", "URL Tokens", "View & Manage") { render(Screen.URL_TOKENS) },
+                Feature("◈", "Permissions", "Grant & Control") { render(Screen.PERMISSIONS) }),
+            listOf(Feature("▦", "Generate Codes", "Security Codes") { render(Screen.CODES) },
+                Feature("⌖", "Location", "View Location") { render(Screen.LOCATION) }),
+            listOf(Feature("◉", "Recovery", "Readiness") { render(Screen.READINESS) },
+                Feature("ᛒ", "Bluetooth", "Permissions") { render(Screen.BLUETOOTH) }),
+            listOf(Feature("◉", "Camera", "Permissions") { render(Screen.CAMERA) },
+                Feature("⌁", "Show Cached", "Location") { showCachedLocation() })
         )
         gridRows.forEach { row ->
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             row.forEachIndexed { index, item ->
-                val card = featureCard(item.first, item.second, item.third, item.fourth)
+                val card = featureCard(item.icon, item.title, item.subtitle, item.action)
                 val lp = LinearLayout.LayoutParams(0, dp(116), 1f)
                 if (index == 0) lp.marginEnd = dp(8) else lp.marginStart = dp(8)
                 lp.bottomMargin = dp(12)
@@ -253,6 +254,7 @@ class MainActivity : Activity() {
         addText(card, "Open our recovery website to locate and manage your device.", 13f, muted, false, bottom = 12)
         val website = configuredWebsiteUrl()
         addText(card, if (website.isBlank()) "Recovery website URL is not configured in this app." else website, 12f, cyan, false, bottom = 12)
+        if (website.isBlank()) actionButton(card, "Configure Website URL", "Set") { configureWebsiteUrl() }
         actionButton(card, "Copy Website URL", "Copy") {
             if (validHttpsUrl(website)) { copyText(website); toast("Website URL copied") }
             else toast("No valid recovery website URL is configured")
@@ -582,6 +584,29 @@ class MainActivity : Activity() {
             tokenDisplay.setText(token)
             toast("Token ready. Register this exact token; do not regenerate after pairing.")
         } catch (_: Exception) { toast("Token generation or secure storage failed") }
+    }
+
+    private fun configureWebsiteUrl() {
+        val input = EditText(this).apply {
+            hint = "https://your-recovery-website"
+            setText(prefs.getString("website_url", "") ?: "")
+            setSingleLine(true)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Recovery website URL")
+            .setMessage("Enter the real HTTPS URL of your Jazz Recovery website. This is separate from the backend server URL.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val value = input.text.toString().trim().trimEnd('/')
+                if (!validHttpsUrl(value)) toast("Enter a valid HTTPS website URL")
+                else {
+                    prefs.edit().putString("website_url", value).apply()
+                    toast("Recovery website URL saved")
+                    render(Screen.FIND_PHONE)
+                }
+            }
+            .show()
     }
 
     private fun configuredWebsiteUrl(): String {
