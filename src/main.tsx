@@ -297,7 +297,7 @@ function Login({ done }: { done: () => void }) {
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
         <h1>{forgotPassword ? "Reset your password" : registering ? "Create your account" : "Lost Mode"}</h1>
         <p className="auth-subtitle">
-          {forgotPassword ? "Verify your username and recovery PIN to set a new password." : registering ? "Register your owner account and pair this Android device." : "Secure access to your registered recovery devices."}
+          {forgotPassword ? (useRecoveryPin ? "Verify your username and recovery PIN to set a new password." : "Verify with your registered passkey to set a new password.") : registering ? "Register your owner account and pair this Android device." : "Secure access to your registered recovery devices."}
         </p>
         <form onSubmit={submit} className="auth-form" autoComplete="on">
           <label><span>Username</span><input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" minLength={3} maxLength={64} required /></label>
