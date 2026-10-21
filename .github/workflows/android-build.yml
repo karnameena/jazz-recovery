@@ -1,7 +1,7 @@
 name: Jazz Recovery Android Build
 on:
   push:
-    branches: [feature/android-neon-ui-20261021]
+    branches: [feature/android-neon-ui-20261021, feature/passkey-reset-ui-20261021]
   pull_request:
     branches: [feature/recovery-pin-20261021]
     paths:
