@@ -261,7 +261,7 @@ function Login({ done }: { done: () => void }) {
         if (!deviceName || !imei || !deviceId || !deviceToken) {
           throw new Error("Enter the device details and copy the device ID and token from the Jazz Recovery app.");
         }
-        const body = JSON.stringify({ username, password, deviceName, imei, deviceId, deviceToken, recoveryPin, confirmRecoveryPin });
+        const body = JSON.stringify({ username, password, confirmPassword, deviceName, imei, deviceId, deviceToken, recoveryPin, confirmRecoveryPin });
         password = "";
         if (passwordRef.current) passwordRef.current.value = "";
         await api("/api/auth/register", { method: "POST", body });
