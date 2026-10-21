@@ -12,6 +12,7 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
 <uses-permission android:name="android.permission.WAKE_LOCK"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-<application android:label="Jazz Recovery" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false">
+<application android:name=".JazzRecoveryApplication" android:label="Jazz Recovery" android:icon="@drawable/ic_jazz_recovery" android:roundIcon="@drawable/ic_jazz_recovery" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false">
 <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
+<service android:name=".RecoveryAgentService" android:enabled="true" android:exported="false" android:foregroundServiceType="camera"/>
 </application></manifest>
