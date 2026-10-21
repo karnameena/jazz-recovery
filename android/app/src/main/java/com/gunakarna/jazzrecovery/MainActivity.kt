@@ -217,7 +217,7 @@ class MainActivity : Activity() {
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val iconView = TextView(this).apply {
             text = icon; textSize = 22f; gravity = Gravity.CENTER; setTextColor(cyan)
-            background = shape(Color.rgb(17, 40, 76), 12, Color.argb(120, cyan), 1)
+            background = shape(Color.rgb(17, 40, 76), 12, Color.argb(120, Color.red(cyan), Color.green(cyan), Color.blue(cyan)), 1)
         }
         top.addView(iconView, LinearLayout.LayoutParams(dp(40), dp(40)))
         val arrow = TextView(this).apply { text = "›"; textSize = 26f; setTextColor(cyan); gravity = Gravity.CENTER }
@@ -655,7 +655,7 @@ class MainActivity : Activity() {
             setPadding(dp(14), dp(13), dp(14), dp(13))
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(14, 130, 210), Color.rgb(104, 67, 218))).apply {
                 cornerRadius = dp(13).toFloat()
-                setStroke(dp(1), Color.argb(180, cyan))
+                setStroke(dp(1), Color.argb(180, Color.red(cyan), Color.green(cyan), Color.blue(cyan)))
             }
             isClickable = true; isFocusable = true
             setOnClickListener { action() }
