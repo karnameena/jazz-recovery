@@ -41,7 +41,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Jazz Recovery's native UI. All recovery actions continue to use the existing
- * device ID, Android Keystore token, server preference and foreground agent.
+ * device ID, Android Keystore token, server preference, account re-pair flow and foreground agent.
  */
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
@@ -51,11 +51,7 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var bottomNav: LinearLayout
     private var currentScreen = Screen.HOME
-    private val deviceId by lazy {
-        prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
-            prefs.edit().putString("device_id", it).apply()
-        }
-    }
+    private var deviceId: String = ""
 
     private enum class Screen { HOME, FIND_PHONE, SUPPORT, URL_TOKENS, PERMISSIONS, CODES, LOCATION, READINESS, BLUETOOTH, CAMERA }
     private data class Feature(val icon: String, val title: String, val subtitle: String, val action: () -> Unit)
@@ -71,6 +67,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        deviceId = prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
+            prefs.edit().putString("device_id", it).apply()
+        }
         window.statusBarColor = navy
         window.navigationBarColor = navy
         if (Build.VERSION.SDK_INT >= 29) {
@@ -342,6 +341,19 @@ class MainActivity : Activity() {
                     .put("charging", bm.isCharging).put("network", "UNKNOWN"))
             request("POST", "/android/device/heartbeat", data, true)
         }
+
+        addDivider(card)
+        addText(card, "Re-pair an existing account", 17f, white, true, top = 12, bottom = 4)
+        addText(card, "After reinstalling, Android may create a new local ID and token. Enter the same website username and password plus the existing device ID from your website device list. This rotates the token for that existing record without creating a duplicate device.", 12f, muted, false, bottom = 10)
+        val repairUsername = textField("Existing account username", "")
+        card.addView(repairUsername, marginParams(bottom = 7))
+        val repairPassword = textField("Existing account password", "").apply { inputType = 129 }
+        card.addView(repairPassword, marginParams(bottom = 7))
+        val existingDeviceId = textField("Existing device ID from website", "")
+        card.addView(existingDeviceId, marginParams(bottom = 7))
+        actionButton(card, "Repair Existing Device", "Secure") {
+            repairExistingDevice(server.text.toString(), repairUsername.text.toString(), repairPassword.text.toString(), existingDeviceId.text.toString())
+        }
         content.addView(card, marginParams(bottom = 16))
         addStatusCard()
     }
@@ -578,18 +590,74 @@ class MainActivity : Activity() {
         } catch (_: SecurityException) { toast("Location permission is required") }
     }
 
+    private fun getOrCreateDeviceToken(): String {
+        val existing = prefs.getString("secret", null)
+        return if (!existing.isNullOrBlank()) decrypt(existing) else {
+            val bytes = ByteArray(32)
+            java.security.SecureRandom().nextBytes(bytes)
+            Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                .also { prefs.edit().putString("secret", encrypt(it)).apply() }
+        }
+    }
+
     private fun generateOrShowToken() {
         try {
-            val existing = prefs.getString("secret", null)
-            val token = if (!existing.isNullOrBlank()) decrypt(existing) else {
-                val bytes = ByteArray(32)
-                java.security.SecureRandom().nextBytes(bytes)
-                Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-                    .also { prefs.edit().putString("secret", encrypt(it)).apply() }
-            }
-            tokenDisplay.setText(token)
+            tokenDisplay.setText(getOrCreateDeviceToken())
             toast("Token ready. Register this exact token; do not regenerate after pairing.")
         } catch (_: Exception) { toast("Token generation or secure storage failed") }
+    }
+
+    private fun repairExistingDevice(serverInput: String, usernameInput: String, passwordInput: String, existingIdInput: String) {
+        val base = serverInput.trim().trimEnd('/')
+        val username = usernameInput.trim()
+        val password = passwordInput
+        val existingId = existingIdInput.trim()
+        if (!validHttpsUrl(base)) { toast("Enter the valid HTTPS server URL first"); return }
+        if (username.isBlank() || password.isBlank()) { toast("Enter your existing website username and password"); return }
+        if (existingId.length !in 8..128 || !existingId.matches(Regex("[A-Za-z0-9._:-]+"))) {
+            toast("Enter the existing device ID shown in your website device list"); return
+        }
+        val newToken = try { getOrCreateDeviceToken() } catch (_: Exception) {
+            toast("Could not access the secure device token. Reinstalling may require generating a new token."); return
+        }
+        status.text = "Verifying account and repairing device…"
+        Thread {
+            val result = try {
+                val connection = (URL(base + "/api/auth/device-repair").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 8000
+                    connection.readTimeout = 12000
+                    connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.doOutput = true
+                    val body = JSONObject()
+                        .put("username", username)
+                        .put("password", password)
+                        .put("deviceId", existingId)
+                        .put("deviceToken", newToken)
+                        .put("deviceName", Build.MODEL)
+                    connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(500) }.orEmpty()
+                    Pair(code, response)
+                } finally { connection.disconnect() }
+            } catch (e: Exception) { Pair(0, "Connection failed: " + e.javaClass.simpleName) }
+            runOnUiThread {
+                if (result.first in 200..299) {
+                    prefs.edit().putString("server", base).putString("device_id", existingId).apply()
+                    deviceId = existingId
+                    status.text = "Existing device repaired. Device history and recovery state are preserved."
+                    toast("Device re-paired successfully. Keep your new token private.")
+                    render(Screen.URL_TOKENS)
+                } else {
+                    status.text = "Device repair failed (HTTP " + result.first + "): " + result.second
+                    toast("Repair failed. Check username, password, device ID and server URL.")
+                }
+            }
+        }.start()
     }
 
     private fun configureWebsiteUrl() {
