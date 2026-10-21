@@ -501,6 +501,24 @@ function App() {
     setDevice(null);
   }
 
+  async function setupRecoveryPin() {
+    const password = window.prompt("Confirm your current Jazz Recovery password:");
+    if (password == null || !password) return;
+    const recoveryPin = window.prompt("Create a 4-digit recovery PIN:");
+    if (recoveryPin == null) return;
+    const confirmRecoveryPin = window.prompt("Re-enter your 4-digit recovery PIN:");
+    if (confirmRecoveryPin == null) return;
+    try {
+      await api("/api/auth/recovery-pin", {
+        method: "POST",
+        body: JSON.stringify({ password, recoveryPin, confirmRecoveryPin }),
+      });
+      setMsg("Recovery PIN saved securely. You can use it if you forget your password.");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not save recovery PIN.");
+    }
+  }
+
   async function shareLocation() {
     if (!device?.location) return;
     const url = googleMapsUrl(device.location);
@@ -596,6 +614,9 @@ function App() {
             }}
           >
             <RefreshCw size={17} /> Refresh
+          </button>
+          <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
+            <LockKeyhole size={17} /> Set recovery PIN
           </button>
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
