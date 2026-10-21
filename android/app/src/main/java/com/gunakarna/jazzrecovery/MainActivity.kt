@@ -41,7 +41,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Jazz Recovery's native UI. All recovery actions continue to use the existing
- * device ID, Android Keystore token, server preference and foreground agent.
+ * device ID, Android Keystore token, server preference, account re-pair flow and foreground agent.
  */
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
