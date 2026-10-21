@@ -96,6 +96,7 @@ class MainActivity : Activity() {
 
     private fun render(screen: Screen) {
         currentScreen = screen
+        status = TextView(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(navy)
@@ -512,7 +513,6 @@ class MainActivity : Activity() {
     }
 
     private fun addStatusCard() {
-        if (!::status.isInitialized) status = TextView(this)
         status.text = "Ready • Device ID: ${deviceId.take(25)}${if (deviceId.length > 25) "…" else ""}"
         status.textSize = 11f
         status.setTextColor(cyan)
