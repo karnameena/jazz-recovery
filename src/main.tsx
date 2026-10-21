@@ -225,7 +225,7 @@ function Login({ done }: { done: () => void }) {
         if (!username) throw new Error("Enter your username.");
         if (newPassword !== confirmNewPassword) throw new Error("The new passwords do not match.");
         if (useRecoveryPin) {
-          if (!/^\\d{4}$/.test(recoveryPin)) throw new Error("Enter your 4-digit recovery PIN.");
+          if (!/^\d{4}$/.test(recoveryPin)) throw new Error("Enter your 4-digit recovery PIN.");
           await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ username, recoveryPin, newPassword }) });
         } else {
           if (!window.PublicKeyCredential || !navigator.credentials) throw new Error("This browser does not support passkeys. Use your recovery PIN instead.");
@@ -235,7 +235,7 @@ function Login({ done }: { done: () => void }) {
           const credential = await navigator.credentials.get({ publicKey: {
             ...options,
             challenge: base64UrlToBytes(options.challenge),
-            allowCredentials: (options.allowCredentials || []).map((item: PublicKeyCredentialDescriptor & { id: string }) => ({ ...item, id: base64UrlToBytes(item.id) }))
+            allowCredentials: (options.allowCredentials || []).map((item: { id: string; transports?: AuthenticatorTransport[]; type?: PublicKeyCredentialType }) => ({ ...item, id: base64UrlToBytes(item.id) }))
           } as PublicKeyCredentialRequestOptions }) as PublicKeyCredential | null;
           if (!credential) throw new Error("Passkey verification was cancelled.");
           await api("/api/auth/password-reset/passkey/verify", { method: "POST", body: JSON.stringify({ flowId: challenge.flowId, response: serializeCredential(credential), newPassword }) });
@@ -257,7 +257,7 @@ function Login({ done }: { done: () => void }) {
         const deviceToken = String(fields.get("deviceToken") || "").trim();
         const recoveryPin = String(fields.get("recoveryPin") || "");
         const confirmRecoveryPin = String(fields.get("confirmRecoveryPin") || "");
-        if (!/^\\d{4}$/.test(recoveryPin) || recoveryPin !== confirmRecoveryPin) throw new Error("Enter and confirm the same 4-digit recovery PIN.");
+        if (!/^\d{4}$/.test(recoveryPin) || recoveryPin !== confirmRecoveryPin) throw new Error("Enter and confirm the same 4-digit recovery PIN.");
         if (!deviceName || !imei || !deviceId || !deviceToken) {
           throw new Error("Enter the device details and copy the device ID and token from the Jazz Recovery app.");
         }
@@ -364,7 +364,7 @@ function App() {
         ...options,
         challenge: base64UrlToBytes(options.challenge),
         user: { ...options.user, id: base64UrlToBytes(options.user.id) },
-        excludeCredentials: (options.excludeCredentials || []).map((item: PublicKeyCredentialDescriptor & { id: string }) => ({ ...item, id: base64UrlToBytes(item.id) }))
+        excludeCredentials: (options.excludeCredentials || []).map((item: { id: string; transports?: AuthenticatorTransport[]; type?: PublicKeyCredentialType }) => ({ ...item, id: base64UrlToBytes(item.id) }))
       } as PublicKeyCredentialCreationOptions }) as PublicKeyCredential | null;
       if (!credential) throw new Error("Passkey registration was cancelled.");
       await api("/api/auth/passkey/register/verify", { method: "POST", body: JSON.stringify({ flowId: challenge.flowId, response: serializeCredential(credential) }) });
