@@ -23,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -109,7 +110,7 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             clipToPadding = false
-            addView(content, ScrollView.LayoutParams(-1, -2))
+            addView(content, FrameLayout.LayoutParams(-1, -2))
         }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         bottomNav = LinearLayout(this).apply {
@@ -756,7 +757,7 @@ class MainActivity : Activity() {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("jazz_recovery_key_v1", null) as? SecretKey)?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder("jazz_recovery_key_v1", KeyGenParameterSpec.PURPOSE_ENCRYPT or KeyGenParameterSpec.PURPOSE_DECRYPT)
+            init(KeyGenParameterSpec.Builder("jazz_recovery_key_v1", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
