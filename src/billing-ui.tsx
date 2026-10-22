@@ -35,6 +35,7 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 export function Register({ done, onLogin }: { done: () => void; onLogin: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [deviceId] = useState(randomId);
   const [deviceToken] = useState(() => randomToken(32));
@@ -162,6 +163,7 @@ export function BillingPanel() {
         description: result.description, order_id: result.orderId,
         theme: { color: "#6f8cff" },
         handler: async () => {
+          setCheckoutOpen(false);
           setMessage("Payment submitted. Waiting for verified provider confirmation…");
           for (let i=0; i<12; i++) {
             await new Promise(resolve => window.setTimeout(resolve, 2500));
@@ -173,8 +175,9 @@ export function BillingPanel() {
           }
           setMessage("Payment is awaiting verified confirmation. Your account will update when the payment webhook is processed.");
         },
-        modal: { ondismiss: () => setMessage("Checkout closed. No subscription was activated unless payment is verified.") }
+        modal: { ondismiss: () => { setCheckoutOpen(false); setMessage("Checkout closed. No subscription was activated unless payment is verified."); } }
       });
+      setCheckoutOpen(true);
       checkout.open();
     } catch (e) { setMessage(errorMessage(e)); }
     finally { setBusy(false); }
@@ -213,7 +216,7 @@ export function BillingPanel() {
     <div className="billing-meta"><div><span>Current status</span><strong>{subscription?.status || "Loading…"}</strong></div><div><span>Access ends</span><strong>{endLabel}</strong></div></div>
     <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
-    <button className="primary-button" disabled={busy || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":subscription?.access && subscription.status==="trialing"?"Subscribe for one year":"Subscribe / Renew — ₹"+(pricePaise/100).toFixed(2)}</button>
+    <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":subscription?.access && subscription.status==="trialing"?"Subscribe for one year":"Subscribe / Renew — ₹"+(pricePaise/100).toFixed(2)}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
     {isOwner && <div className="discount-admin"><div className="eyebrow">OWNER CONTROLS</div><h3>Discount code management</h3>
       <form onSubmit={createCode} className="discount-form">
