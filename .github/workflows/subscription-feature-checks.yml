@@ -1,0 +1,23 @@
+name: Jazz Recovery website feature checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/subscription-feature-checks.yml"
+  push:
+    branches: [feature/subscriptions-registration-20261022]
+jobs:
+  website-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
