@@ -156,40 +156,76 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
 function Login({ done }: { done: () => void }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [registerMode, setRegisterMode] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showDeviceToken, setShowDeviceToken] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const [deviceId, setDeviceId] = useState("");
+  const [deviceToken, setDeviceToken] = useState("");
+
+  function generateDeviceCredentials() {
+    const bytes = new Uint8Array(32);
+    window.crypto.getRandomValues(bytes);
+    const token = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+    const idBytes = new Uint8Array(8);
+    window.crypto.getRandomValues(idBytes);
+    const id = "JZ-" + Array.from(idBytes, value => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+    setDeviceId(id);
+    setDeviceToken(token);
+    if (tokenRef.current) tokenRef.current.value = token;
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
     setError("");
     setSubmitting(true);
-
     const form = event.currentTarget;
     const fields = new FormData(form);
     const username = String(fields.get("username") || "").trim();
     let password = String(fields.get("password") || "");
+    const confirmPassword = String(fields.get("confirmPassword") || "");
+    const deviceName = String(fields.get("deviceName") || "").trim();
+    const imei = String(fields.get("imei") || "").replace(/[\s-]/g, "");
+    const submittedDeviceId = String(fields.get("deviceId") || "").trim();
+    let submittedDeviceToken = String(fields.get("deviceToken") || "").trim();
 
     if (!username || !password) {
-      password = "";
-      if (passwordRef.current) passwordRef.current.value = "";
       setError("Enter your username and password.");
       setSubmitting(false);
       return;
     }
+    if (registerMode && password !== confirmPassword) {
+      if (confirmRef.current) confirmRef.current.value = "";
+      setError("The passwords do not match.");
+      setSubmitting(false);
+      return;
+    }
+    if (registerMode && (!deviceName || !/^\d{14,16}$/.test(imei) || !submittedDeviceId || submittedDeviceToken.length < 32)) {
+      setError("Enter the device name and 14–16 digit IMEI, then generate a device ID and token.");
+      setSubmitting(false);
+      return;
+    }
 
-    // Serialize once, then immediately clear the password field and local variable.
-    // A password must exist in browser memory while it is being submitted, but it is
-    // never placed in React state, localStorage, sessionStorage, or the URL.
-    const body = JSON.stringify({ username, password });
+    const body = registerMode
+      ? JSON.stringify({ username, password, deviceName, imei, deviceId: submittedDeviceId, deviceToken: submittedDeviceToken })
+      : JSON.stringify({ username, password });
     password = "";
+    submittedDeviceToken = "";
     if (passwordRef.current) passwordRef.current.value = "";
+    if (confirmRef.current) confirmRef.current.value = "";
+    if (tokenRef.current) tokenRef.current.value = "";
 
     try {
-      await api("/api/auth/login", { method: "POST", body });
+      await api(registerMode ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
       form.reset();
+      setDeviceId("");
+      setDeviceToken("");
       done();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : (registerMode ? "Registration failed" : "Login failed"));
     } finally {
       setSubmitting(false);
     }
@@ -202,8 +238,8 @@ function Login({ done }: { done: () => void }) {
       <section className="auth-card glass-panel">
         <div className="brand-mark"><Sparkles size={28} /></div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
-        <h1>Lost Mode</h1>
-        <p className="auth-subtitle">Secure access to your registered recovery devices.</p>
+        <h1>{registerMode ? "Create account" : "Lost Mode"}</h1>
+        <p className="auth-subtitle">{registerMode ? "Register your account and pair your Android recovery app. Your 7-day trial starts after successful registration." : "Secure access to your registered recovery devices."}</p>
         <form onSubmit={submit} className="auth-form" autoComplete="on">
           <label>
             <span>Username</span>
@@ -211,18 +247,204 @@ function Login({ done }: { done: () => void }) {
           </label>
           <label>
             <span>Password</span>
-            <input ref={passwordRef} name="password" autoComplete="current-password" type="password" placeholder="Enter password" required />
+            <input ref={passwordRef} name="password" autoComplete={registerMode ? "new-password" : "current-password"} type={showPassword ? "text" : "password"} placeholder={registerMode ? "Create a strong password" : "Enter password"} required />
           </label>
+          {registerMode && <>
+            <label>
+              <span>Confirm password</span>
+              <input ref={confirmRef} name="confirmPassword" autoComplete="new-password" type={showPassword ? "text" : "password"} placeholder="Confirm password" required />
+            </label>
+            <button className="ghost-button" type="button" onClick={() => setShowPassword(value => !value)}>{showPassword ? "Hide passwords" : "Show passwords"}</button>
+            <label>
+              <span>Device name</span>
+              <input name="deviceName" autoComplete="off" placeholder="e.g. My Android phone" required />
+            </label>
+            <label>
+              <span>IMEI (14–16 digits)</span>
+              <input name="imei" inputMode="numeric" autoComplete="off" maxLength={16} placeholder="Enter device IMEI" required />
+            </label>
+            <label>
+              <span>Device token ID</span>
+              <input name="deviceId" value={deviceId} onChange={event => setDeviceId(event.target.value)} autoComplete="off" placeholder="Generate a unique device ID" required />
+            </label>
+            <label>
+              <span>Device token (copy into the Android app)</span>
+              <input ref={tokenRef} name="deviceToken" value={deviceToken} onChange={event => setDeviceToken(event.target.value)} type={showDeviceToken ? "text" : "password"} autoComplete="off" placeholder="Generate a secure device token" required />
+            </label>
+            <div className="auth-inline-actions">
+              <button className="secondary-button" type="button" onClick={generateDeviceCredentials}>Generate device ID + token</button>
+              <button className="ghost-button" type="button" onClick={() => setShowDeviceToken(value => !value)}>{showDeviceToken ? "Hide token" : "Show token"}</button>
+            </div>
+            <p className="auth-help">Save the generated device ID and token and enter them in the paired Android app. The server stores a hash of the token, not the plain token.</p>
+          </>}
+          {!registerMode && <button className="ghost-button" type="button" onClick={() => setShowPassword(value => !value)}>{showPassword ? "Hide password" : "Show password"}</button>}
           {error && <div className="error-banner" role="alert">{error}</div>}
           <button className="primary-button full-width" type="submit" disabled={submitting}>
             {submitting ? <RefreshCw className="spin" size={18} /> : <LockKeyhole size={18} />}
-            {submitting ? "Verifying securely…" : "Enter Lost Mode"}
+            {submitting ? (registerMode ? "Creating account…" : "Verifying securely…") : (registerMode ? "Register and start 7-day trial" : "Enter Lost Mode")}
           </button>
         </form>
-        <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
+        <button className="auth-switch" type="button" onClick={() => { setRegisterMode(value => !value); setError(""); setShowPassword(false); setShowDeviceToken(false); }}>
+          {registerMode ? "Already registered? Sign in" : "New to Jazz Recovery? Create an account"}
+        </button>
+        <div className="secure-note"><ShieldCheck size={16} /> Secure account and device authentication</div>
       </section>
       <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
     </main>
+  );
+}
+
+declare global {
+  interface Window { Razorpay?: new (options: Record<string, any>) => { open: () => void }; }
+}
+
+function BillingPanel() {
+  const [status, setStatus] = useState<any>(null);
+  const [message, setMessage] = useState("");
+  const [code, setCode] = useState("");
+  const [applied, setApplied] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [bootstrapSecret, setBootstrapSecret] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [codes, setCodes] = useState<any[]>([]);
+  const [newCode, setNewCode] = useState("");
+  const [label, setLabel] = useState("Promotion");
+  const [percent, setPercent] = useState("10");
+  const [expiry, setExpiry] = useState("");
+  const [limit, setLimit] = useState("");
+
+  async function refresh() {
+    const data = await api("/api/billing/status");
+    setStatus(data);
+    try {
+      const admin = await api("/api/billing/admin/discount-codes");
+      setIsAdmin(true);
+      setCodes(admin.items || []);
+    } catch { setIsAdmin(false); }
+  }
+  useEffect(() => { void refresh().catch(error => setMessage(error.message || "Could not load subscription status")); }, []);
+
+  async function applyCode() {
+    setBusy(true); setMessage(""); setApplied(null);
+    try {
+      const result = await api("/api/billing/discount/validate", { method: "POST", body: JSON.stringify({ code }) });
+      if (!result.valid) throw new Error(result.error || "Invalid discount code");
+      setApplied(result);
+      setMessage("Discount applied: " + result.percentOff + "% off. Final price ₹" + (result.amountPaise / 100).toFixed(2) + ".");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not validate code"); }
+    finally { setBusy(false); }
+  }
+
+  async function subscribe() {
+    setBusy(true); setMessage("");
+    try {
+      const order = await api("/api/billing/checkout", { method: "POST", body: JSON.stringify({ code: code.trim() }) });
+      if (order.complimentary) {
+        setMessage("Complimentary annual access activated.");
+        await refresh();
+        return;
+      }
+      if (!window.Razorpay) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://checkout.razorpay.com/v1/checkout.js";
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Could not load secure Razorpay Checkout"));
+          document.head.appendChild(script);
+        });
+      }
+      if (!window.Razorpay) throw new Error("Razorpay Checkout is unavailable.");
+      const checkout = new window.Razorpay({
+        key: order.keyId, order_id: order.orderId, amount: order.amountPaise, currency: order.currency,
+        name: "Jazz Recovery", description: order.description,
+        theme: { color: "#748cff" },
+        handler: () => setMessage("Payment submitted. Subscription activates after the server verifies Razorpay's webhook. Tap Refresh status in a moment."),
+        modal: { ondismiss: () => setMessage("Checkout closed. If you completed payment, wait for server verification before retrying.") }
+      });
+      checkout.open();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not start checkout"); }
+    finally { setBusy(false); }
+  }
+
+  async function claimAdmin() {
+    setBusy(true); setMessage("");
+    try {
+      await api("/api/billing/admin/claim", { method: "POST", body: JSON.stringify({ bootstrapSecret }) });
+      setBootstrapSecret("");
+      setMessage("Billing admin claimed for this account. Remove the bootstrap secret from server settings now.");
+      await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Admin setup failed"); }
+    finally { setBusy(false); }
+  }
+
+  async function createCode() {
+    setBusy(true); setMessage("");
+    try {
+      const result = await api("/api/billing/admin/discount-codes", { method: "POST", body: JSON.stringify({ code: newCode || undefined, label, percentOff: Number(percent), expiresAt: expiry || null, maxRedemptions: limit || null }) });
+      setNewCode(result.code);
+      setMessage("New code created. Copy it now; only its hash is stored. Code: " + result.code);
+      await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not create code"); }
+    finally { setBusy(false); }
+  }
+
+  async function codeAction(id: string, action: "disable" | "rotate") {
+    setBusy(true); setMessage("");
+    try {
+      const result = await api("/api/billing/admin/discount-codes/" + id + "/" + action, { method: "POST", body: JSON.stringify({}) });
+      if (action === "rotate") setMessage("New code generated; copy it now: " + result.code);
+      else setMessage("Code disabled for future redemptions. Existing entitlements remain unchanged.");
+      await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Discount update failed"); }
+    finally { setBusy(false); }
+  }
+
+  if (!status) return <section className="billing-panel glass-panel"><p>Loading subscription status…</p></section>;
+  const amount = applied ? applied.amountPaise / 100 : 499;
+  return (
+    <section className="billing-panel glass-panel">
+      <div className="billing-heading">
+        <div><div className="eyebrow">JAZZ RECOVERY PLAN</div><h2>Subscription & free trial</h2></div>
+        <button className="secondary-button" type="button" onClick={() => void refresh().catch(error => setMessage(error.message))}>Refresh status</button>
+      </div>
+      <div className="billing-status-grid">
+        <div><span>Current access</span><strong>{status.access === "trial" ? "7-day free trial" : status.access === "subscribed" ? "Annual subscription active" : "Trial/subscription required"}</strong></div>
+        <div><span>Annual plan</span><strong>₹499 / year</strong></div>
+        <div><span>Trial ends</span><strong>{status.trial?.expiresAt ? new Date(status.trial.expiresAt).toLocaleString() : "Not started"}</strong></div>
+      </div>
+      <div className="billing-checkout-row">
+        <label className="billing-code-field"><span>Discount code (optional)</span><input value={code} onChange={event => { setCode(event.target.value.toUpperCase()); setApplied(null); }} placeholder="Enter your code" autoComplete="off" /></label>
+        <button className="secondary-button" type="button" disabled={busy || !code.trim()} onClick={() => void applyCode()}>Apply code</button>
+      </div>
+      <div className="billing-actions">
+        <div><span className="billing-muted">Total payable</span><strong className="billing-price">₹{amount.toFixed(2)}</strong><span className="billing-muted">Gateway fees are not added to your price.</span></div>
+        <button className="primary-button" type="button" disabled={busy} onClick={() => void subscribe()}>{busy ? "Please wait…" : "Subscribe securely"}</button>
+      </div>
+      {message && <div className="billing-message" role="status">{message}</div>}
+      <button className="auth-switch" type="button" onClick={() => setAdminOpen(value => !value)}>{adminOpen ? "Hide owner/admin tools" : "Owner/admin tools"}</button>
+      {adminOpen && !isAdmin && <div className="billing-admin-box">
+        <p>After the fresh reset, sign in to the intended owner account and claim billing administration with the one-time server bootstrap secret.</p>
+        <label><span>One-time bootstrap secret</span><input type="password" value={bootstrapSecret} onChange={event => setBootstrapSecret(event.target.value)} autoComplete="off" /></label>
+        <button className="secondary-button" type="button" disabled={busy || !bootstrapSecret} onClick={() => void claimAdmin()}>Claim admin access</button>
+      </div>}
+      {adminOpen && isAdmin && <div className="billing-admin-box">
+        <h3>Discount code management</h3>
+        <div className="billing-admin-form">
+          <label><span>Code (leave blank to generate)</span><input value={newCode} onChange={event => setNewCode(event.target.value.toUpperCase())} placeholder="e.g. JAZZ-FAMILY" /></label>
+          <label><span>Label</span><input value={label} onChange={event => setLabel(event.target.value)} /></label>
+          <label><span>Discount</span><select value={percent} onChange={event => setPercent(event.target.value)}><option value="10">10%</option><option value="20">20%</option><option value="50">50%</option><option value="100">100% — complimentary</option></select></label>
+          <label><span>Expiry (optional)</span><input type="datetime-local" value={expiry} onChange={event => setExpiry(event.target.value)} /></label>
+          <label><span>Maximum redemptions (optional)</span><input type="number" min="1" value={limit} onChange={event => setLimit(event.target.value)} placeholder="Unlimited" /></label>
+          <button className="primary-button" type="button" disabled={busy} onClick={() => void createCode()}>Create discount</button>
+        </div>
+        <div className="billing-code-list">{codes.map(item => <div className="billing-code-item" key={item.id}>
+          <div><strong>{item.label}</strong><span>{item.percent_off}% · {item.active ? "Active" : "Disabled"} · {item.redeemed_count} redeemed{item.expires_at ? " · expires " + new Date(item.expires_at).toLocaleDateString() : " · no expiry"}</span></div>
+          {item.active && <div className="billing-code-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void codeAction(item.id,"rotate")}>Rotate</button><button className="secondary-button" type="button" disabled={busy} onClick={() => void codeAction(item.id,"disable")}>Disable</button></div>}
+        </div>)}</div>
+      </div>}
+      <p className="billing-footnote">Payments use Razorpay Checkout. Access is granted only after verified server-side payment confirmation. Paid subscriptions renew manually; no automatic charging.</p>
+    </section>
   );
 }
 
@@ -452,6 +674,7 @@ function App() {
         </div>
       </header>
 
+      <BillingPanel />
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
           <div className="sidebar-title"><div><span className="eyebrow">MY DEVICES</span><h2>Recovery Fleet</h2></div><span className="count-badge">{devices.length}</span></div>
