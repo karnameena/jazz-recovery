@@ -276,13 +276,13 @@ class MainActivity : Activity() {
         val card = panelCard()
         addText(card, "Contact Information", 19f, white, true, bottom = 5)
         addText(card, "Reach out for any support or queries", 13f, muted, false, bottom = 16)
-        contactRow(card, "✉", "Email ID", "gunakarna33@gmail.com", blue) {
+        contactRow(card, "GMAIL", "Email ID", "gunakarna33@gmail.com", blue) {
             try { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:gunakarna33@gmail.com"))) }
             catch (_: Exception) { toast("No email app is configured") }
         }
         actionButton(card, "Copy email address", "Copy") { copyText("gunakarna33@gmail.com"); toast("Email copied") }
         addDivider(card)
-        contactRow(card, "◎", "Instagram", "@gunakarna", purple) {
+        contactRow(card, "INSTAGRAM", "Instagram", "@gunakarna", purple) {
             openExternal("https://www.instagram.com/gunakarna/", "Could not open Instagram")
         }
         actionButton(card, "Copy Instagram handle", "Copy") { copyText("@gunakarna"); toast("Instagram handle copied") }
@@ -365,10 +365,20 @@ class MainActivity : Activity() {
         permissionLine(card, "Camera", Manifest.permission.CAMERA)
         permissionLine(card, "Fine location", Manifest.permission.ACCESS_FINE_LOCATION)
         permissionLine(card, "Coarse location", Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= 29) permissionLine(card, "Background location (Allow all the time)", Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        permissionLine(card, "Secure settings (ADB/device-owner grant)", Manifest.permission.WRITE_SECURE_SETTINGS)
+        addText(card, "Background access is optional and must be explicitly allowed in Android settings. Declaring WRITE_SECURE_SETTINGS does not grant it; Android/device policy can still refuse global Location changes.", 11f, muted, false, top = 2, bottom = 8)
         if (Build.VERSION.SDK_INT >= 31) permissionLine(card, "Bluetooth connect", Manifest.permission.BLUETOOTH_CONNECT)
         if (Build.VERSION.SDK_INT >= 31) permissionLine(card, "Bluetooth scan", Manifest.permission.BLUETOOTH_SCAN)
         if (Build.VERSION.SDK_INT >= 33) permissionLine(card, "Notifications", Manifest.permission.POST_NOTIFICATIONS)
         actionButton(card, "Request required permissions", "Grant") { requestNeededPermissions() }
+        if (Build.VERSION.SDK_INT >= 29) actionButton(card, "Allow all-time background location", "Open") { requestBackgroundLocationPermission() }
+        actionButton(card, "Grant WRITE_SECURE_SETTINGS via ADB", "Info") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Advanced Location control")
+                .setMessage("Declaring WRITE_SECURE_SETTINGS does not grant it. On supported test devices, connect ADB and run: adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS. Some Android versions/OEMs still block changing the global Location switch. Device-owner provisioning is the supported managed-device route on Android 11+.")
+                .setPositiveButton("OK", null).show()
+        }
         actionButton(card, "Open app settings", "Open") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
         actionButton(card, "Accessibility settings (optional)", "Open") {
             toast("Accessibility is optional and no Jazz accessibility service is currently registered.")
@@ -400,9 +410,13 @@ class MainActivity : Activity() {
         val card = panelCard()
         addText(card, "Location tools", 18f, white, true, bottom = 8)
         addText(card, "Cached location is the most recent location Android has available to this app. It may be old or unavailable if location was disabled, permission was denied, or the device has no cached fix.", 12f, muted, false, bottom = 12)
+        addText(card, "Global Location switch: " + if (GlobalLocationController.isEnabled(this)) "ON" else "OFF", 13f, cyan, true, bottom = 8)
+        actionButton(card, "Turn Global Location ON", "ON") { changeGlobalLocation(true) }
+        actionButton(card, "Turn Global Location OFF", "OFF") { changeGlobalLocation(false) }
         actionButton(card, "Show Cached Location", "⌖") { showCachedLocation() }
         actionButton(card, "Open Location Settings", "Open") { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
         actionButton(card, "Grant Location Permission", "Grant") { requestLocationPermission() }
+        if (Build.VERSION.SDK_INT >= 29) actionButton(card, "Allow all-time background location", "Open") { requestBackgroundLocationPermission() }
         content.addView(card, marginParams(bottom = 16))
         addStatusCard()
     }
@@ -572,7 +586,47 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 100)
-        } else toast("Location permission is already granted")
+        } else toast("Foreground location permission is already granted")
+    }
+
+    private fun requestBackgroundLocationPermission() {
+        if (Build.VERSION.SDK_INT < 29) {
+            toast("Background location permission is not required separately on this Android version")
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            toast("Grant foreground location permission first")
+            requestLocationPermission()
+            return
+        }
+        if (Build.VERSION.SDK_INT == 29) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), 105)
+            } else toast("Background location permission is already granted")
+        } else {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Allow all the time")
+                .setMessage("On Android 11 and later, choose Jazz Recovery in App settings → Permissions → Location → Allow all the time. Android requires this separate user action.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Open settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                }.show()
+        }
+    }
+
+    private fun changeGlobalLocation(enabled: Boolean) {
+        val result = GlobalLocationController.setEnabled(this, enabled)
+        val confirmed = result.optBoolean("ok", false)
+        val actual = result.optString("locationServices", "UNKNOWN")
+        status.text = "Global Location: " + actual
+        if (confirmed) {
+            toast("Global Location is confirmed " + (if (enabled) "ON" else "OFF"))
+        } else {
+            val error = result.optString("error", "NOT_CONFIRMED")
+            toast("Android did not confirm Location " + (if (enabled) "ON" else "OFF") + " (" + error + "). Open Location Settings to change it manually.")
+            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        }
     }
 
     private fun showCachedLocation() {
@@ -702,9 +756,26 @@ class MainActivity : Activity() {
 
     private fun contactRow(parent: LinearLayout, icon: String, label: String, value: String, accent: Int, action: () -> Unit) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(8)); isClickable = true; setOnClickListener { action() } }
+        val isGmail = icon == "GMAIL"
+        val isInstagram = icon == "INSTAGRAM"
         val iconView = TextView(this).apply {
-            text = icon; textSize = 22f; gravity = Gravity.CENTER; setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accent, purple)).apply { cornerRadius = dp(13).toFloat() }
+            text = when { isGmail -> "M"; isInstagram -> "◎"; else -> icon }
+            textSize = if (isGmail) 25f else 23f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(if (isGmail) Color.rgb(234, 67, 53) else white)
+            background = when {
+                isGmail -> GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    cornerRadius = dp(13).toFloat()
+                    setStroke(dp(1), Color.rgb(218, 220, 224))
+                }
+                isInstagram -> GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(245, 133, 41), Color.rgb(221, 42, 123), Color.rgb(129, 52, 175), Color.rgb(81, 91, 212))).apply {
+                    cornerRadius = dp(13).toFloat()
+                }
+                else -> GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accent, purple)).apply { cornerRadius = dp(13).toFloat() }
+            }
         }
         row.addView(iconView, LinearLayout.LayoutParams(dp(46), dp(46)))
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(4), 0) }
