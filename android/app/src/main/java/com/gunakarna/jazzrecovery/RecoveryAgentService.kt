@@ -46,7 +46,14 @@ class RecoveryAgentService : Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(42, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+            val hasForegroundLocation =
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
+                checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                if (hasForegroundLocation && hasBackgroundLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+            startForeground(42, notification, types)
         } else {
             startForeground(42, notification)
         }
@@ -119,7 +126,8 @@ class RecoveryAgentService : Service() {
                     JSONObject().put("ok", true).put("mode", if (enabled) "LOST_MODE" else "NORMAL_MODE")
                 }
                 "location_status" -> JSONObject().put("ok", true).put("locationServices", locationState()).put("timestamp", System.currentTimeMillis())
-                "location_enable", "location_disable" -> JSONObject().put("ok", false).put("error", "ANDROID_PERMISSION_OR_DEVICE_OWNER_REQUIRED")
+                "location_enable" -> GlobalLocationController.setEnabled(this, true).put("timestamp", System.currentTimeMillis())
+                "location_disable" -> GlobalLocationController.setEnabled(this, false).put("timestamp", System.currentTimeMillis())
                 else -> JSONObject().put("ok", false).put("error", "UNSUPPORTED_COMMAND")
             }
         } catch (e: Exception) {
@@ -129,10 +137,7 @@ class RecoveryAgentService : Service() {
     }
 
     private fun locationState(): String {
-        return try {
-            val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) "ON" else "OFF"
-        } catch (_: Exception) { "UNKNOWN" }
+        return runCatching { if (GlobalLocationController.isEnabled(this)) "ON" else "OFF" }.getOrDefault("UNKNOWN")
     }
 
     private fun getLocation(): JSONObject {
