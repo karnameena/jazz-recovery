@@ -3,7 +3,7 @@ on:
   push:
     branches: [feature/android-neon-ui-20261021, feature/passkey-reset-ui-20261021, feature/location-control-support-icons-20261022]
   pull_request:
-    branches: [feature/recovery-pin-20261021]
+    branches: [feature/recovery-pin-20261021, feature/passkey-reset-ui-20261021]
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
