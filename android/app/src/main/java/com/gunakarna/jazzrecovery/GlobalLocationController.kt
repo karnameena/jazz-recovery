@@ -26,7 +26,7 @@ object GlobalLocationController {
         try {
             val policy = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && policy.isDeviceOwnerApp(context.packageName)) {
-                policy.setLocationEnabled(context.adminComponentOrNull(), enabled)
+                policy.setLocationEnabled(android.content.ComponentName(context, JazzRecoveryAdminReceiver::class.java), enabled)
             } else {
                 val granted = context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -60,5 +60,4 @@ object GlobalLocationController {
         }
     }
 
-    private fun Context.adminComponentOrNull(): android.content.ComponentName? = null
 }
