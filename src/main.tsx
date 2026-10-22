@@ -13,7 +13,6 @@ import {
   LockKeyhole,
   LogOut,
   MapPin,
-  Mic,
   Navigation,
   Radio,
   RefreshCw,
@@ -24,7 +23,6 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import "./responsive-fixes.css";
-import { VoiceInput } from "./voice/VoiceInput";
 
 type LocationState = {
   latitude: number;
@@ -349,7 +347,6 @@ function App() {
   const [device, setDevice] = useState<Device | null>(null);
   const [msg, setMsg] = useState("");
   const [activeCount, setActiveCount] = useState(0);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationFeedback, setLocationFeedback] = useState("");
 
@@ -558,7 +555,6 @@ function App() {
   }
 
   async function logout() {
-    setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
     await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
@@ -892,18 +888,6 @@ function App() {
                     <span>Secure recovery state</span>
                   </div>
                 </button>
-                <button
-                  className="voice-toggle"
-                  aria-expanded={voiceOpen}
-                  aria-controls="recovery-voice-panel"
-                  onClick={() => setVoiceOpen((open) => !open)}
-                >
-                  <Mic />
-                  <div>
-                    <strong>Voice Input</strong>
-                    <span>Remote recovery voice broadcast</span>
-                  </div>
-                </button>
               </section>
 
               <section
@@ -981,19 +965,6 @@ function App() {
                   Location Services changed.
                 </p>
               </section>
-
-              {voiceOpen && (
-                <VoiceInput
-                  key={selected}
-                  deviceName={
-                    devices.find((item) => item.id === selected)?.deviceName ||
-                    "Selected device"
-                  }
-                  disabled={activeCount > 0 || device.id !== selected}
-                  onAction={action}
-                  onClose={() => setVoiceOpen(false)}
-                />
-              )}
 
               {(msg || activeCount > 0) && (
                 <div className="command-banner glass-panel">
