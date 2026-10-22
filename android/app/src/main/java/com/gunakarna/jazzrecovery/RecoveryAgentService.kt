@@ -52,7 +52,7 @@ class RecoveryAgentService : Service() {
             val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
                 checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                if (hasForegroundLocation && hasBackgroundLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+                (if (hasForegroundLocation && hasBackgroundLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
             startForeground(42, notification, types)
         } else {
             startForeground(42, notification)
