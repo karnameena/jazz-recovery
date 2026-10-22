@@ -1,7 +1,7 @@
 name: Website build
 on:
   push:
-    branches: ["feature/fresh-registration-subscriptions-20261022"]
+    branches: ["feature/fresh-registration-subscriptions-20261022", "fix/auth-session-and-api-errors-20261023"]
   pull_request:
     branches: ["main"]
 jobs:
