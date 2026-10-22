@@ -1085,3 +1085,56 @@ a {
     min-height: 215px;
   }
 }
+
+
+/* Account registration and subscription controls */
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--cyan);
+  cursor: pointer;
+  font-size: .78rem;
+  justify-self: start;
+  padding: 2px 0;
+}
+.auth-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.55;
+  text-align: left;
+}
+.auth-switch { margin-top: 14px; }
+.subscription-wrap { padding: 0 28px 22px; }
+.subscription-panel { padding: 22px; display: grid; gap: 14px; }
+.subscription-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.subscription-heading h2, .discount-admin h3 { margin: 5px 0 0; }
+.subscription-status { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; color: var(--muted); font-size: .75rem; text-transform: capitalize; white-space: nowrap; }
+.subscription-status.active { color: var(--green); border-color: rgba(103,247,175,.3); }
+.subscription-details p { margin: 5px 0; color: var(--muted); line-height: 1.5; }
+.subscription-details strong, .subscription-price strong { color: var(--text); }
+.subscription-code-form { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: end; }
+.subscription-code-form label, .discount-admin-form label { display: grid; gap: 7px; color: #aeb9d7; font-size: .8rem; font-weight: 700; }
+.subscription-code-form input, .discount-admin-form input, .discount-admin-form select {
+  width: 100%; min-width: 0; min-height: 44px; border-radius: 12px; border: 1px solid rgba(130,151,218,.24);
+  padding: 0 12px; background: rgba(5,9,23,.76); color: #fff; font: inherit;
+}
+.subscription-panel .primary-button, .subscription-panel .secondary-button { min-height: 44px; }
+.subscription-price { margin: 0; color: var(--green); }
+.subscription-message { margin: 0; color: var(--cyan); font-size: .88rem; line-height: 1.5; overflow-wrap: anywhere; }
+.discount-admin { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 13px; }
+.discount-admin-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.discount-admin-form button { grid-column: 1 / -1; }
+.discount-code-list { display: grid; gap: 9px; }
+.discount-code-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.discount-code-row div { display: grid; gap: 3px; min-width: 0; }
+.discount-code-row span, .discount-code-row small { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.discount-code-row strong { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .subscription-wrap { padding: 0 14px 16px; }
+  .subscription-panel { padding: 16px; }
+  .subscription-code-form, .discount-admin-form { grid-template-columns: 1fr; }
+  .discount-admin-form button { grid-column: auto; }
+  .discount-code-row { grid-template-columns: minmax(0,1fr) auto; }
+  .discount-code-row button { grid-column: 1 / -1; }
+}
