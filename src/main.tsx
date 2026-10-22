@@ -26,6 +26,7 @@ import {
 import "./styles.css";
 import "./responsive-fixes.css";
 import { VoiceInput } from "./voice/VoiceInput";
+import { BillingPanel, Register } from "./billing-ui";
 
 type LocationState = {
   latitude: number;
@@ -153,7 +154,7 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
   return name;
 }
 
-function Login({ done }: { done: () => void }) {
+function Login({ done, onRegister }: { done: () => void; onRegister: () => void }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -220,6 +221,7 @@ function Login({ done }: { done: () => void }) {
           </button>
         </form>
         <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
+        <p className="auth-subtitle">New to Jazz Recovery? <button type="button" className="text-button" onClick={onRegister}>Create an account</button></p>
       </section>
       <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
     </main>
@@ -229,6 +231,7 @@ function Login({ done }: { done: () => void }) {
 function App() {
   const [ready, setReady] = useState(false);
   const [login, setLogin] = useState(false);
+  const [authView, setAuthView] = useState<"login" | "register">("login");
   const [devices, setDevices] = useState<Device[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [device, setDevice] = useState<Device | null>(null);
@@ -433,7 +436,9 @@ function App() {
   const onlineCount = useMemo(() => devices.filter((item) => item.online).length, [devices]);
 
   if (!ready) return <div className="loading-screen"><RefreshCw className="spin" /> Loading secure recovery…</div>;
-  if (!login) return <Login done={() => setLogin(true)} />;
+  if (!login) return authView === "register"
+    ? <Register done={() => setLogin(true)} onLogin={() => setAuthView("login")} />
+    : <Login done={() => setLogin(true)} onRegister={() => setAuthView("register")} />;
 
   return (
     <div className="app-shell">
@@ -469,6 +474,7 @@ function App() {
         </aside>
 
         <main className="dashboard-main">
+          <BillingPanel />
           {!device ? <section className="glass-panel empty-state"><Smartphone size={36} /><h2>Select a device</h2><p>Choose an enrolled device to open recovery controls.</p></section> : <>
             <section className="device-hero glass-panel">
               <div className="hero-main">
