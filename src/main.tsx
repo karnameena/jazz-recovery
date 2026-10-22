@@ -26,6 +26,8 @@ import {
 import "./styles.css";
 import "./responsive-fixes.css";
 import { VoiceInput } from "./voice/VoiceInput";
+import { AccountAccess } from "./auth/AccountAccess";
+import { SubscriptionPanel } from "./billing/SubscriptionPanel";
 
 type LocationState = {
   latitude: number;
@@ -154,76 +156,7 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
 }
 
 function Login({ done }: { done: () => void }) {
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const passwordRef = useRef<HTMLInputElement>(null);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    setError("");
-    setSubmitting(true);
-
-    const form = event.currentTarget;
-    const fields = new FormData(form);
-    const username = String(fields.get("username") || "").trim();
-    let password = String(fields.get("password") || "");
-
-    if (!username || !password) {
-      password = "";
-      if (passwordRef.current) passwordRef.current.value = "";
-      setError("Enter your username and password.");
-      setSubmitting(false);
-      return;
-    }
-
-    // Serialize once, then immediately clear the password field and local variable.
-    // A password must exist in browser memory while it is being submitted, but it is
-    // never placed in React state, localStorage, sessionStorage, or the URL.
-    const body = JSON.stringify({ username, password });
-    password = "";
-    if (passwordRef.current) passwordRef.current.value = "";
-
-    try {
-      await api("/api/auth/login", { method: "POST", body });
-      form.reset();
-      done();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="auth-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
-      <section className="auth-card glass-panel">
-        <div className="brand-mark"><Sparkles size={28} /></div>
-        <div className="eyebrow">JAZZ SECURE RECOVERY</div>
-        <h1>Lost Mode</h1>
-        <p className="auth-subtitle">Secure access to your registered recovery devices.</p>
-        <form onSubmit={submit} className="auth-form" autoComplete="on">
-          <label>
-            <span>Username</span>
-            <input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" required />
-          </label>
-          <label>
-            <span>Password</span>
-            <input ref={passwordRef} name="password" autoComplete="current-password" type="password" placeholder="Enter password" required />
-          </label>
-          {error && <div className="error-banner" role="alert">{error}</div>}
-          <button className="primary-button full-width" type="submit" disabled={submitting}>
-            {submitting ? <RefreshCw className="spin" size={18} /> : <LockKeyhole size={18} />}
-            {submitting ? "Verifying securely…" : "Enter Lost Mode"}
-          </button>
-        </form>
-        <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
-      </section>
-      <footer className="auth-footer">Developed by 😈gunakarna😈</footer>
-    </main>
-  );
+  return <AccountAccess api={api} done={done} />;
 }
 
 function App() {
@@ -451,6 +384,8 @@ function App() {
           <button className="ghost-button danger-hover" onClick={logout}><LogOut size={17} /> Logout</button>
         </div>
       </header>
+
+      <div className="subscription-wrap"><SubscriptionPanel api={api} /></div>
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
