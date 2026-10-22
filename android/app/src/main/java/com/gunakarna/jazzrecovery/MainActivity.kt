@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -144,16 +145,15 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(24), dp(12), dp(20))
             background = shape(panelAlt, 22, blue, 1, glow = true)
         }
-        val emblem = TextView(this).apply {
-            text = "J"
-            gravity = Gravity.CENTER
-            textSize = 58f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(cyan, blue, purple)).apply {
+        val emblem = ImageView(this).apply {
+            setImageResource(R.drawable.jazzrecovery)
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            contentDescription = "Jazz Recovery logo"
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setStroke(dp(3), Color.argb(180, 220, 248, 255))
             }
+            clipToOutline = true
             elevation = dp(8).toFloat()
         }
         hero.addView(emblem, LinearLayout.LayoutParams(dp(112), dp(112)))
@@ -187,16 +187,15 @@ class MainActivity : Activity() {
 
     private fun brandHeader() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val logo = TextView(this).apply {
-            text = "J"
-            gravity = Gravity.CENTER
-            textSize = 28f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(cyan, blue, purple)).apply {
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.jazzrecovery)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "Jazz Recovery logo"
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setStroke(dp(1), cyan)
             }
+            clipToOutline = true
         }
         row.addView(logo, LinearLayout.LayoutParams(dp(54), dp(54)))
         val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
@@ -758,12 +757,9 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(8)); isClickable = true; setOnClickListener { action() } }
         val isGmail = icon == "GMAIL"
         val isInstagram = icon == "INSTAGRAM"
-        val iconView = TextView(this).apply {
-            text = when { isGmail -> "M"; isInstagram -> "◎"; else -> icon }
-            textSize = if (isGmail) 25f else 23f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setTextColor(if (isGmail) Color.rgb(234, 67, 53) else white)
+        val iconView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             background = when {
                 isGmail -> GradientDrawable().apply {
                     setColor(Color.WHITE)
@@ -775,6 +771,11 @@ class MainActivity : Activity() {
                     cornerRadius = dp(13).toFloat()
                 }
                 else -> GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accent, purple)).apply { cornerRadius = dp(13).toFloat() }
+            }
+            when {
+                isGmail -> setImageResource(R.drawable.ic_gmail_original)
+                isInstagram -> setImageResource(R.drawable.ic_instagram_original)
+                else -> contentDescription = icon
             }
         }
         row.addView(iconView, LinearLayout.LayoutParams(dp(46), dp(46)))

@@ -15,7 +15,7 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
 <uses-permission android:name="android.permission.WAKE_LOCK"/>
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-<application android:name=".JazzRecoveryApplication" android:label="Jazz Recovery" android:icon="@drawable/ic_jazz_recovery" android:roundIcon="@drawable/ic_jazz_recovery" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false">
+<application android:name=".JazzRecoveryApplication" android:label="Jazz Recovery" android:icon="@drawable/jazzrecovery" android:roundIcon="@drawable/jazzrecovery" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false">
 <receiver android:name=".JazzRecoveryAdminReceiver" android:permission="android.permission.BIND_DEVICE_ADMIN" android:exported="true">
 <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin_receiver"/>
 <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/></intent-filter>
