@@ -117,6 +117,7 @@ export function BillingPanel() {
   const [isOwner, setIsOwner] = useState(false);
   const [codes, setCodes] = useState<Array<{id:number;code_hint:string;percent_off:number;active:boolean;expires_at:string|null;redemption_count:number;max_redemptions:number|null}>>([]);
   const [newCode, setNewCode] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [percent, setPercent] = useState("10");
   const [expires, setExpires] = useState("");
   const [limit, setLimit] = useState("");
@@ -181,10 +182,23 @@ export function BillingPanel() {
   async function createCode(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMessage("");
     try {
-      await request("/api/admin/discount-codes", {method:"POST",body:JSON.stringify({code:newCode,percentOff:Number(percent),expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null})});
-      setMessage("Discount created. Save the exact code you entered; the server stores only its hash.");
+      if (editingId !== null) {
+        await request("/api/admin/discount-codes/" + editingId, {method:"PATCH",body:JSON.stringify({percentOff:Number(percent),expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null})});
+        setMessage("Discount updated. Existing entitlements are unchanged.");
+        setEditingId(null);
+      } else {
+        await request("/api/admin/discount-codes", {method:"POST",body:JSON.stringify({code:newCode,percentOff:Number(percent),expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null})});
+        setMessage("Discount created. Save the exact code you entered; the server stores only its hash.");
+      }
       setNewCode(""); setExpires(""); setLimit(""); await refreshCodes();
     } catch(e) { setMessage(errorMessage(e)); }
+  }
+  function editCode(item: {id:number;percent_off:number;expires_at:string|null;max_redemptions:number|null}) {
+    setEditingId(item.id);
+    setPercent(String(item.percent_off));
+    const date = item.expires_at ? new Date(item.expires_at) : null;
+    setExpires(date ? new Date(date.getTime() - date.getTimezoneOffset()*60000).toISOString().slice(0,16) : "");
+    setLimit(item.max_redemptions == null ? "" : String(item.max_redemptions));
   }
   async function toggleCode(id:number, active:boolean) {
     try { await request("/api/admin/discount-codes/"+id,{method:"PATCH",body:JSON.stringify({active})}); await refreshCodes(); setMessage(active?"Code enabled.":"Code disabled for future redemptions."); }
@@ -202,13 +216,16 @@ export function BillingPanel() {
     {message && <p className="billing-message" role="status">{message}</p>}
     {isOwner && <div className="discount-admin"><div className="eyebrow">OWNER CONTROLS</div><h3>Discount code management</h3>
       <form onSubmit={createCode} className="discount-form">
-        <label><span>New code</span><input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase())} pattern="[A-Z0-9][A-Z0-9-]{3,39}" required /></label>
+        {editingId === null
+          ? <label><span>New code</span><input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase())} pattern="[A-Z0-9][A-Z0-9-]{3,39}" required /></label>
+          : <div><span>Editing code ••••{codes.find(item=>item.id===editingId)?.code_hint}</span><p>The original code is hashed and cannot be displayed or renamed. To rotate it, create a replacement code and disable the old one.</p></div>}
         <label><span>Discount</span><select value={percent} onChange={e=>setPercent(e.target.value)}><option value="10">10%</option><option value="20">20%</option><option value="50">50%</option><option value="100">100% family/friends</option></select></label>
         <label><span>Expiry (optional)</span><input type="datetime-local" value={expires} onChange={e=>setExpires(e.target.value)} /></label>
         <label><span>Max redemptions (optional)</span><input type="number" min="1" max="1000000" value={limit} onChange={e=>setLimit(e.target.value)} /></label>
-        <button className="primary-button" type="submit">Create discount code</button>
+        <button className="primary-button" type="submit">{editingId === null ? "Create discount code" : "Save discount changes"}</button>
+        {editingId !== null && <button className="secondary-button" type="button" onClick={()=>{setEditingId(null);setExpires("");setLimit("");}}>Cancel edit</button>}
       </form>
-      <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>••••{item.code_hint} · {item.percent_off}% · {item.redemption_count}{item.max_redemptions?"/"+item.max_redemptions:""} used</span><button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div>)}</div>
+      <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>••••{item.code_hint} · {item.percent_off}% · {item.redemption_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
     </div>}
   </section>;
 }
