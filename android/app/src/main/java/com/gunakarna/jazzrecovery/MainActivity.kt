@@ -31,13 +31,12 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var server: EditText
     private lateinit var credential: EditText
-    private val deviceId by lazy {
-        prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
-            prefs.edit().putString("device_id", it).apply()
-        }
-    }
+    private var deviceId: String = ""
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        deviceId = prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
+            prefs.edit().putString("device_id", it).apply()
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 30, 28, 30)
@@ -66,7 +65,24 @@ class MainActivity : Activity() {
             else { prefs.edit().putString("server", value).apply(); show("Server URL saved") }
         }
         action("Test /health") { request("GET", "/health", null, false) }
-        label("Pairing: use create-device.mjs with this installation ID, then enter its one-time credential.")
+        label("Re-pair after reinstall")
+        label("Use the same account username, account password and the EXISTING device ID from your original pairing. Jazz will securely replace the lost device token without deleting the device history.")
+        val repairUsername = field("Existing account username", "")
+        val repairPassword = field("Existing account password", "")
+        repairPassword.inputType = 129
+        val repairDeviceId = field("Existing device ID from original pairing", "")
+        action("Re-pair existing account/device") {
+            repairExistingDevice(
+                repairUsername.text.toString().trim(),
+                repairPassword.text.toString(),
+                repairDeviceId.text.toString().trim()
+            ) {
+                repairUsername.text.clear()
+                repairPassword.text.clear()
+                repairDeviceId.text.clear()
+            }
+        }
+        label("Normal pairing: use create-device.mjs with this installation ID, then enter its one-time credential.")
         credential = field("Device credential", "")
         credential.inputType = 129
         action("Save encrypted credential") {
@@ -123,6 +139,77 @@ class MainActivity : Activity() {
         }
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)))
     }
+    private fun repairExistingDevice(username: String, password: String, existingDeviceId: String, clearFields: () -> Unit) {
+        val base = (prefs.getString("server", "") ?: "").trim().trimEnd('/')
+        if (!base.startsWith("https://") || runCatching { URL(base).host.isBlank() }.getOrDefault(true)) {
+            show("Configure a valid HTTPS recovery server URL first")
+            return
+        }
+        if (username.length !in 3..64 || password.isBlank() || existingDeviceId.length !in 3..120) {
+            show("Enter your existing account username, password and original device ID")
+            return
+        }
+        val newToken = Base64.encodeToString(
+            ByteArray(32).also { java.security.SecureRandom().nextBytes(it) },
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        // Encrypt locally before rotating the server credential. If Keystore storage
+        // cannot be prepared, leave the server-side token unchanged.
+        val encryptedToken = try { encrypt(newToken) } catch (_: Exception) {
+            show("Secure token storage failed; no repair request was sent")
+            return
+        }
+        show("Verifying account and re-pairing the existing device…")
+        Thread {
+            var failure: String? = null
+            try {
+                val conn = URL(base + "/api/auth/device-repair").openConnection() as HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    conn.setRequestProperty("Accept", "application/json")
+                    conn.doOutput = true
+                    val body = JSONObject()
+                        .put("username", username)
+                        .put("password", password)
+                        .put("deviceId", existingDeviceId)
+                        .put("deviceToken", newToken)
+                        .put("deviceName", Build.MODEL.take(80))
+                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    val responseText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(500) } ?: ""
+                    val response = runCatching { JSONObject(responseText) }.getOrNull()
+                    if (code !in 200..299 || response?.optBoolean("ok", false) != true) {
+                        failure = response?.optString("error")?.takeIf { it.isNotBlank() }
+                            ?: "Re-pair failed (HTTP $code). Check the username, password and original device ID."
+                    } else {
+                        prefs.edit()
+                            .putString("device_id", existingDeviceId)
+                            .putString("secret", encryptedToken)
+                            .apply()
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                failure = "Re-pair connection failed: ${e.javaClass.simpleName}. The server may not have the device-repair endpoint yet."
+            }
+            runOnUiThread {
+                if (failure == null) {
+                    deviceId = existingDeviceId
+                    clearFields()
+                    show("Re-pair successful. Existing device ID and recovery history preserved; new credential stored securely. Tap Send device heartbeat to verify.")
+                } else {
+                    show(failure!!)
+                }
+            }
+        }.start()
+    }
+
     private fun request(method: String, path: String, data: JSONObject?, auth: Boolean) {
         val base = prefs.getString("server", "") ?: ""
         if (!base.startsWith("https://")) { show("Configure HTTPS server first"); return }
