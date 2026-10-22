@@ -25,6 +25,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -758,12 +759,9 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(8)); isClickable = true; setOnClickListener { action() } }
         val isGmail = icon == "GMAIL"
         val isInstagram = icon == "INSTAGRAM"
-        val iconView = TextView(this).apply {
-            text = when { isGmail -> "M"; isInstagram -> "◎"; else -> icon }
-            textSize = if (isGmail) 25f else 23f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setTextColor(if (isGmail) Color.rgb(234, 67, 53) else white)
+        val iconView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             background = when {
                 isGmail -> GradientDrawable().apply {
                     setColor(Color.WHITE)
@@ -775,6 +773,11 @@ class MainActivity : Activity() {
                     cornerRadius = dp(13).toFloat()
                 }
                 else -> GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accent, purple)).apply { cornerRadius = dp(13).toFloat() }
+            }
+            when {
+                isGmail -> setImageResource(R.drawable.ic_gmail_original)
+                isInstagram -> setImageResource(R.drawable.ic_instagram_original)
+                else -> contentDescription = icon
             }
         }
         row.addView(iconView, LinearLayout.LayoutParams(dp(46), dp(46)))
