@@ -145,16 +145,15 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(24), dp(12), dp(20))
             background = shape(panelAlt, 22, blue, 1, glow = true)
         }
-        val emblem = TextView(this).apply {
-            text = "J"
-            gravity = Gravity.CENTER
-            textSize = 58f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(cyan, blue, purple)).apply {
+        val emblem = ImageView(this).apply {
+            setImageResource(R.drawable.jazzrecovery)
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            contentDescription = "Jazz Recovery logo"
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setStroke(dp(3), Color.argb(180, 220, 248, 255))
             }
+            clipToOutline = true
             elevation = dp(8).toFloat()
         }
         hero.addView(emblem, LinearLayout.LayoutParams(dp(112), dp(112)))
@@ -188,16 +187,15 @@ class MainActivity : Activity() {
 
     private fun brandHeader() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val logo = TextView(this).apply {
-            text = "J"
-            gravity = Gravity.CENTER
-            textSize = 28f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(cyan, blue, purple)).apply {
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.jazzrecovery)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = "Jazz Recovery logo"
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setStroke(dp(1), cyan)
             }
+            clipToOutline = true
         }
         row.addView(logo, LinearLayout.LayoutParams(dp(54), dp(54)))
         val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
