@@ -259,7 +259,7 @@ function App() {
 
   useEffect(() => {
     api("/api/auth/session")
-      .then(() => setLogin(true))
+      .then((session) => setLogin(session.authenticated === true))
       .catch(() => setLogin(false))
       .finally(() => setReady(true));
   }, []);
