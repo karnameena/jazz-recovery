@@ -159,6 +159,9 @@ function Login({ done }: { done: () => void }) {
   const [registerMode, setRegisterMode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showDeviceToken, setShowDeviceToken] = useState(false);
+  const [registered, setRegistered] = useState(false);
+  const [registeredDevice, setRegisteredDevice] = useState({ deviceId: "", deviceToken: "" });
+  const [credentialCopyError, setCredentialCopyError] = useState("");
   const passwordRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
   const tokenRef = useRef<HTMLInputElement>(null);
@@ -209,6 +212,8 @@ function Login({ done }: { done: () => void }) {
       return;
     }
 
+    const tokenForDisplay = submittedDeviceToken;
+    const deviceIdForDisplay = submittedDeviceId;
     const body = registerMode
       ? JSON.stringify({ username, password, deviceName, imei, deviceId: submittedDeviceId, deviceToken: submittedDeviceToken })
       : JSON.stringify({ username, password });
@@ -221,6 +226,11 @@ function Login({ done }: { done: () => void }) {
     try {
       await api(registerMode ? "/api/auth/register" : "/api/auth/login", { method: "POST", body });
       form.reset();
+      if (registerMode) {
+        setRegisteredDevice({ deviceId: deviceIdForDisplay, deviceToken: tokenForDisplay });
+        setRegistered(true);
+        return;
+      }
       setDeviceId("");
       setDeviceToken("");
       done();
@@ -229,6 +239,33 @@ function Login({ done }: { done: () => void }) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (registered) {
+    return (
+      <main className="auth-shell">
+        <div className="ambient ambient-one" />
+        <div className="ambient ambient-two" />
+        <section className="auth-card glass-panel">
+          <div className="brand-mark"><ShieldCheck size={28} /></div>
+          <div className="eyebrow">JAZZ SECURE RECOVERY</div>
+          <h1>Registration successful</h1>
+          <p className="auth-subtitle">Your account is ready and your 7-day trial has started. Copy these device credentials into the Android app before continuing. The token is shown here once.</p>
+          <div className="device-credentials"><strong>Device token ID</strong><code>{registeredDevice.deviceId}</code><strong>Device token</strong><code>{registeredDevice.deviceToken}</code></div>
+          <button className="primary-button full-width" type="button" onClick={async () => {
+            try {
+              await navigator.clipboard.writeText("Device token ID: " + registeredDevice.deviceId + "\nDevice token: " + registeredDevice.deviceToken);
+              setCredentialCopyError("Device credentials copied. Keep them private and paste them into your Android app.");
+            } catch {
+              setCredentialCopyError("Clipboard unavailable. Select and copy both values above before continuing.");
+            }
+          }}>Copy device credentials</button>
+          {credentialCopyError && <div className="billing-message" role="status">{credentialCopyError}</div>}
+          <button className="secondary-button full-width" type="button" onClick={done}>Continue to Lost Mode</button>
+          <div className="secure-note"><ShieldCheck size={16} /> The server stores a hash of the device token.</div>
+        </section>
+      </main>
+    );
   }
 
   return (
