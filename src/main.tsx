@@ -128,6 +128,38 @@ async function api(path: string, options: RequestInit = {}) {
   return data;
 }
 
+function base64UrlToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized + "=".repeat((4 - (normalized.length % 4)) % 4));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function bytesToBase64Url(value: ArrayBuffer | Uint8Array): string {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function serializeCredential(credential: PublicKeyCredential) {
+  const response = credential.response;
+  const base = { id: credential.id, rawId: bytesToBase64Url(credential.rawId), type: credential.type };
+  if (response instanceof AuthenticatorAttestationResponse) {
+    return { ...base, response: {
+      clientDataJSON: bytesToBase64Url(response.clientDataJSON),
+      attestationObject: bytesToBase64Url(response.attestationObject),
+      transports: typeof response.getTransports === "function" ? response.getTransports() : []
+    } };
+  }
+  const assertion = response as AuthenticatorAssertionResponse;
+  return { ...base, response: {
+    clientDataJSON: bytesToBase64Url(assertion.clientDataJSON),
+    authenticatorData: bytesToBase64Url(assertion.authenticatorData),
+    signature: bytesToBase64Url(assertion.signature),
+    userHandle: assertion.userHandle ? bytesToBase64Url(assertion.userHandle) : null
+  } };
+}
+
 function formatTime(value: string | number | null | undefined) {
   if (!value) return "Unknown";
   const date = new Date(value);
@@ -167,7 +199,11 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
 }
 
 function Login({ done }: { done: () => void }) {
+  const [registering, setRegistering] = useState(false);
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const [useRecoveryPin, setUseRecoveryPin] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -176,34 +212,71 @@ function Login({ done }: { done: () => void }) {
     if (submitting) return;
     setError("");
     setSubmitting(true);
-
     const form = event.currentTarget;
     const fields = new FormData(form);
     const username = String(fields.get("username") || "").trim();
     let password = String(fields.get("password") || "");
-
-    if (!username || !password) {
-      password = "";
-      if (passwordRef.current) passwordRef.current.value = "";
-      setError("Enter your username and password.");
-      setSubmitting(false);
-      return;
-    }
-
-    // Serialize once, then immediately clear the password field and local variable.
-    // A password must exist in browser memory while it is being submitted, but it is
-    // never placed in React state, localStorage, sessionStorage, or the URL.
-    const body = JSON.stringify({ username, password });
-    password = "";
-    if (passwordRef.current) passwordRef.current.value = "";
-
     try {
-      await api("/api/auth/login", { method: "POST", body });
+      setNotice("");
+      if (forgotPassword) {
+        const recoveryPin = String(fields.get("recoveryPin") || "");
+        const newPassword = String(fields.get("newPassword") || "");
+        const confirmNewPassword = String(fields.get("confirmNewPassword") || "");
+        if (!username) throw new Error("Enter your username.");
+        if (newPassword !== confirmNewPassword) throw new Error("The new passwords do not match.");
+        if (useRecoveryPin) {
+          if (!/^\d{4}$/.test(recoveryPin)) throw new Error("Enter your 4-digit recovery PIN.");
+          await api("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ username, recoveryPin, newPassword }) });
+        } else {
+          if (!window.PublicKeyCredential || !navigator.credentials) throw new Error("This browser does not support passkeys. Use your recovery PIN instead.");
+          const challenge = await api("/api/auth/password-reset/passkey/options", { method: "POST", body: JSON.stringify({ username }) });
+          if (!challenge.available || !challenge.options || !challenge.flowId) throw new Error(challenge.message || "No registered passkey is available. Use your recovery PIN instead.");
+          const options = challenge.options;
+          const credential = await navigator.credentials.get({ publicKey: {
+            ...options,
+            challenge: base64UrlToBytes(options.challenge),
+            allowCredentials: (options.allowCredentials || []).map((item: { id: string; transports?: AuthenticatorTransport[]; type?: PublicKeyCredentialType }) => ({ ...item, id: base64UrlToBytes(item.id) }))
+          } as PublicKeyCredentialRequestOptions }) as PublicKeyCredential | null;
+          if (!credential) throw new Error("Passkey verification was cancelled.");
+          await api("/api/auth/password-reset/passkey/verify", { method: "POST", body: JSON.stringify({ flowId: challenge.flowId, response: serializeCredential(credential), newPassword }) });
+        }
+        form.reset();
+        setForgotPassword(false);
+        setUseRecoveryPin(false);
+        setRegistering(false);
+        setNotice("Password reset successful. Sign in with your new password.");
+        return;
+      }
+      if (!username || !password) throw new Error("Enter your username and password.");
+      if (registering) {
+        const confirmPassword = String(fields.get("confirmPassword") || "");
+        if (password !== confirmPassword) throw new Error("Passwords do not match.");
+        const deviceName = String(fields.get("deviceName") || "").trim();
+        const imei = String(fields.get("imei") || "").trim();
+        const deviceId = String(fields.get("deviceId") || "").trim();
+        const deviceToken = String(fields.get("deviceToken") || "").trim();
+        const recoveryPin = String(fields.get("recoveryPin") || "");
+        const confirmRecoveryPin = String(fields.get("confirmRecoveryPin") || "");
+        if (!/^\d{4}$/.test(recoveryPin) || recoveryPin !== confirmRecoveryPin) throw new Error("Enter and confirm the same 4-digit recovery PIN.");
+        if (!deviceName || !imei || !deviceId || !deviceToken) {
+          throw new Error("Enter the device details and copy the device ID and token from the Jazz Recovery app.");
+        }
+        const body = JSON.stringify({ username, password, confirmPassword, deviceName, imei, deviceId, deviceToken, recoveryPin, confirmRecoveryPin });
+        password = "";
+        if (passwordRef.current) passwordRef.current.value = "";
+        await api("/api/auth/register", { method: "POST", body });
+      } else {
+        const body = JSON.stringify({ username, password });
+        password = "";
+        if (passwordRef.current) passwordRef.current.value = "";
+        await api("/api/auth/login", { method: "POST", body });
+      }
       form.reset();
       done();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : (registering ? "Registration failed" : "Login failed"));
     } finally {
+      password = "";
       setSubmitting(false);
     }
   }
@@ -222,61 +295,47 @@ function Login({ done }: { done: () => void }) {
           />
         </div>
         <div className="eyebrow">JAZZ SECURE RECOVERY</div>
-        <h1>Lost Mode</h1>
+        <h1>{forgotPassword ? "Reset your password" : registering ? "Create your account" : "Lost Mode"}</h1>
         <p className="auth-subtitle">
-          Secure access to your registered recovery devices.
+          {forgotPassword ? (useRecoveryPin ? "Verify your username and recovery PIN to set a new password." : "Verify with your registered passkey to set a new password.") : registering ? "Register your owner account and pair this Android device." : "Secure access to your registered recovery devices."}
         </p>
         <form onSubmit={submit} className="auth-form" autoComplete="on">
-          <label>
-            <span>Username</span>
-            <input
-              name="username"
-              autoComplete="username"
-              autoCapitalize="none"
-              spellCheck={false}
-              placeholder="Enter username"
-              required
-            />
-          </label>
-          <label>
-            <span>Password</span>
-            <input
-              ref={passwordRef}
-              name="password"
-              autoComplete="current-password"
-              type="password"
-              placeholder="Enter password"
-              required
-            />
-          </label>
-          {error && (
-            <div className="error-banner" role="alert">
-              {error}
-            </div>
-          )}
-          <button
-            className="primary-button full-width"
-            type="submit"
-            disabled={submitting}
-          >
-            {submitting ? (
-              <RefreshCw className="spin" size={18} />
-            ) : (
-              <LockKeyhole size={18} />
-            )}
-            {submitting ? "Verifying securely…" : "Enter Lost Mode"}
+          <label><span>Username</span><input name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="Enter username" minLength={3} maxLength={64} required /></label>
+          {!forgotPassword && <label><span>Password</span><input ref={passwordRef} name="password" autoComplete={registering ? "new-password" : "current-password"} type="password" placeholder={registering ? "At least 12 characters, upper/lowercase and a number" : "Enter password"} minLength={registering ? 12 : undefined} required /></label>}
+          {forgotPassword && <>
+            {useRecoveryPin && <label><span>4-digit recovery PIN</span><input name="recoveryPin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" placeholder="Enter your recovery PIN" required /></label>}
+            <label><span>New password</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} placeholder="At least 12 characters" required /></label>
+            <label><span>Confirm new password</span><input name="confirmNewPassword" type="password" autoComplete="new-password" minLength={12} placeholder="Re-enter new password" required /></label>
+          </>}
+          {!forgotPassword && registering && <>
+            <label><span>Confirm password</span><input name="confirmPassword" autoComplete="new-password" type="password" placeholder="Re-enter password" minLength={12} required /></label>
+            <label><span>4-digit recovery PIN</span><input name="recoveryPin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" placeholder="Create a 4-digit PIN" required /></label>
+            <label><span>Confirm recovery PIN</span><input name="confirmRecoveryPin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" placeholder="Re-enter the PIN" required /></label>
+            <div className="eyebrow" style={{ marginTop: 8 }}>DEVICE ENROLLMENT</div>
+            <label><span>Device name</span><input name="deviceName" autoComplete="off" placeholder="e.g. My OnePlus" maxLength={80} required /></label>
+            <label><span>IMEI</span><input name="imei" inputMode="numeric" autoComplete="off" placeholder="14–16 digit IMEI" maxLength={20} required /></label>
+            <label><span>Device ID from app</span><input name="deviceId" autoComplete="off" placeholder="Copy device ID from Jazz Recovery" required /></label>
+            <label><span>Device token from app</span><input name="deviceToken" autoComplete="off" type="password" placeholder="Paste generated device token" required /></label>
+            <p className="auth-subtitle">The server stores only a hash of the device token. Keep the token private.</p>
+          </>}
+          {error && <div className="error-banner" role="alert">{error}</div>}
+          {notice && <div role="status" style={{ padding: 12, borderRadius: 10, background: "rgba(16,185,129,.12)", color: "#047857" }}>{notice}</div>}
+          <button className="primary-button full-width" type="submit" disabled={submitting}>
+            {submitting ? <RefreshCw className="spin" size={18} /> : <LockKeyhole size={18} />}
+            {submitting ? "Please wait…" : forgotPassword ? (useRecoveryPin ? "Verify PIN and reset password" : "Verify passkey and reset password") : registering ? "Register and pair device" : "Enter Lost Mode"}
           </button>
         </form>
-        <div className="secure-note">
-          <ShieldCheck size={16} /> Owner-only authenticated recovery portal
-        </div>
+        {!forgotPassword && !registering && <button className="ghost-button full-width" style={{ marginTop: 12, justifyContent: "center" }} type="button" onClick={() => { setForgotPassword(true); setUseRecoveryPin(false); setError(""); setNotice(""); }}>Forgot password?</button>}
+        {forgotPassword && <button className="ghost-button full-width" style={{ marginTop: 12, justifyContent: "center" }} type="button" onClick={() => { setUseRecoveryPin(value => !value); setError(""); setNotice(""); }}>{useRecoveryPin ? "Use passkey instead" : "Use recovery PIN instead"}</button>}
+        {forgotPassword && <button className="ghost-button full-width" style={{ marginTop: 12, justifyContent: "center" }} type="button" onClick={() => { setForgotPassword(false); setUseRecoveryPin(false); setError(""); setNotice(""); }}>Back to sign in</button>}
+        {!forgotPassword && <button className="ghost-button full-width" style={{ marginTop: 12, justifyContent: "center" }} type="button" onClick={() => { setRegistering(value => !value); setError(""); setNotice(""); }}> 
+          {registering ? "Already registered? Sign in" : "New here? Register a device"}
+        </button>}
+        <div className="secure-note"><ShieldCheck size={16} /> Owner-only authenticated recovery portal</div>
       </section>
       <footer className="site-footer">
         <span className="footer-brand">Jazz Device Recovery</span>
-
-        <span className="developer-credit">
-          Developed by <span className="developer-name">😈 gunakarna 😈</span>
-        </span>
+        <span className="developer-credit">Developed by <span className="developer-name">😈 gunakarna 😈</span></span>
       </footer>
     </main>
   );
@@ -295,6 +354,25 @@ function App() {
   const [locationFeedback, setLocationFeedback] = useState("");
 
   const actionLocks = useRef(new Set<string>());
+
+  async function registerPasskey() {
+    try {
+      if (!window.PublicKeyCredential || !navigator.credentials) throw new Error("This browser does not support passkeys.");
+      const challenge = await api("/api/auth/passkey/register/options", { method: "POST", body: JSON.stringify({}) });
+      const options = challenge.options;
+      const credential = await navigator.credentials.create({ publicKey: {
+        ...options,
+        challenge: base64UrlToBytes(options.challenge),
+        user: { ...options.user, id: base64UrlToBytes(options.user.id) },
+        excludeCredentials: (options.excludeCredentials || []).map((item: { id: string; transports?: AuthenticatorTransport[]; type?: PublicKeyCredentialType }) => ({ ...item, id: base64UrlToBytes(item.id) }))
+      } as PublicKeyCredentialCreationOptions }) as PublicKeyCredential | null;
+      if (!credential) throw new Error("Passkey registration was cancelled.");
+      await api("/api/auth/passkey/register/verify", { method: "POST", body: JSON.stringify({ flowId: challenge.flowId, response: serializeCredential(credential) }) });
+      setMsg("Passkey registered successfully. You can use it to reset your password.");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not register passkey.");
+    }
+  }
 
   async function load() {
     const data = await api("/api/devices");
@@ -491,6 +569,24 @@ function App() {
     setDevice(null);
   }
 
+  async function setupRecoveryPin() {
+    const password = window.prompt("Confirm your current Jazz Recovery password:");
+    if (password == null || !password) return;
+    const recoveryPin = window.prompt("Create a 4-digit recovery PIN:");
+    if (recoveryPin == null) return;
+    const confirmRecoveryPin = window.prompt("Re-enter your 4-digit recovery PIN:");
+    if (confirmRecoveryPin == null) return;
+    try {
+      await api("/api/auth/recovery-pin", {
+        method: "POST",
+        body: JSON.stringify({ password, recoveryPin, confirmRecoveryPin }),
+      });
+      setMsg("Recovery PIN saved securely. You can use it if you forget your password.");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not save recovery PIN.");
+    }
+  }
+
   async function shareLocation() {
     if (!device?.location) return;
     const url = googleMapsUrl(device.location);
@@ -586,6 +682,12 @@ function App() {
             }}
           >
             <RefreshCw size={17} /> Refresh
+          </button>
+          <button className="ghost-button" onClick={() => void registerPasskey()}>
+            <LockKeyhole size={17} /> Register passkey
+          </button>
+          <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
+            <LockKeyhole size={17} /> Set recovery PIN
           </button>
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
