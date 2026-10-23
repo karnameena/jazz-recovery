@@ -27,7 +27,15 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           import assert from "node:assert/strict";
-          const ui = fs.readFileSync("src/main.tsx","utf8");
+          const files = [
+            "src/main.tsx",
+            "src/components/auth/Login.tsx",
+            "src/services/api.ts",
+            "src/voice/VoiceInput.tsx",
+            "src/components/dashboard/RecoveryActionGrid.tsx",
+            "src/components/dashboard/LocationServicesCard.tsx"
+          ];
+          const ui = files.map((file) => fs.readFileSync(file, "utf8")).join("\\n");
           const routes = [
             "/api/auth/login",
             "/api/auth/session",
@@ -40,7 +48,7 @@ jobs:
             assert.ok(ui.includes(route), "Missing browser API route: " + route);
           }
           for (const action of ["RING_DEVICE","RECOVERY_PHOTO","GET_LOCATION","LOCATION_ENABLE","LOCATION_DISABLE","PLAY_VOICE_MESSAGE"]) {
-            assert.ok(ui.includes(action) || fs.readFileSync("src/voice/VoiceInput.tsx","utf8").includes(action), "Missing recovery action: " + action);
+            assert.ok(ui.includes(action), "Missing recovery action: " + action);
           }
           assert.match(ui, /credentials:\s*["']include["']/, "Owner session cookies must be included");
           assert.match(ui, /VITE_API_BASE_URL/, "Browser API target must be configurable");
