@@ -4,18 +4,16 @@ import { Login } from "./components/auth/Login";
 import { DashboardHeader } from "./components/dashboard/DashboardHeader";
 import { DeviceSidebar } from "./components/dashboard/DeviceSidebar";
 import { DeviceHero } from "./components/dashboard/DeviceHero";
+import { LocationCard } from "./components/dashboard/LocationCard";
+import { RecoveryPhotoCard } from "./components/dashboard/RecoveryPhotoCard";
 import type { Device, LocationState } from "./types/device";
 import { base64UrlToBytes, serializeCredential } from "./services/passkeys";
 import { createRoot } from "react-dom/client";
 import {
   Camera,
-  Crosshair,
-  Download,
-  ExternalLink,
   LocateFixed,
   MapPin,
   Mic,
-  Navigation,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -600,128 +598,20 @@ function App() {
               )}
 
               <section className="recovery-grid">
-                <article className="location-card glass-panel">
-                  <div className="card-heading">
-                    <div>
-                      <span className="eyebrow">LAST KNOWN LOCATION</span>
-                      <h2>Device map</h2>
-                    </div>
-                    <MapPin size={22} />
-                  </div>
-                  {device.location ? (
-                    <>
-                      <div className="map-frame">
-                        <iframe
-                          title="Last known device location"
-                          src={mapEmbedUrl(device.location)}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          sandbox="allow-scripts allow-same-origin"
-                        />
-                        <div className="map-overlay">
-                          <Navigation size={15} /> Last known position
-                        </div>
-                      </div>
-                      <div className="location-meta">
-                        <div>
-                          <span>Coordinates</span>
-                          <strong>
-                            {device.location.latitude.toFixed(6)},{" "}
-                            {device.location.longitude.toFixed(6)}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Accuracy</span>
-                          <strong>
-                            {device.location.accuracyMeters ?? "--"} m
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Location time</span>
-                          <strong>
-                            {formatTime(device.location.timestamp)}
-                          </strong>
-                        </div>
-                      </div>
-                      <div className="card-actions">
-                        <a
-                          className="primary-button"
-                          target="_blank"
-                          rel="noreferrer"
-                          href={googleMapsUrl(device.location)}
-                        >
-                          <ExternalLink size={17} /> Open in Maps
-                        </a>
-                        <button
-                          className="secondary-button"
-                          onClick={shareLocation}
-                        >
-                          <Navigation size={17} /> Share Location
-                        </button>
-                        <button
-                          className="secondary-button"
-                          onClick={downloadReport}
-                        >
-                          <Download size={17} /> Download Report
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty-state">
-                      <Crosshair size={30} />
-                      <h3>No location yet</h3>
-                      <p>
-                        Use Get Location to request the latest available
-                        position.
-                      </p>
-                    </div>
-                  )}
-                </article>
+                <LocationCard
+                  device={device}
+                  formatTime={formatTime}
+                  mapEmbedUrl={mapEmbedUrl}
+                  googleMapsUrl={googleMapsUrl}
+                  onShareLocation={() => void shareLocation()}
+                  onDownloadReport={downloadReport}
+                />
 
-                <article className="photo-card glass-panel">
-                  <div className="card-heading">
-                    <div>
-                      <span className="eyebrow">RECOVERY EVIDENCE</span>
-                      <h2>Latest recovery photo</h2>
-                    </div>
-                    <Camera size={22} />
-                  </div>
-                  {device.photo ? (
-                    <>
-                      <div className="photo-frame">
-                        <img src={device.photo.dataUrl} alt="Latest recovery" />
-                      </div>
-                      <div className="photo-meta">
-                        <span>{device.photo.camera || "camera"} camera</span>
-                        <span>{formatTime(device.photo.timestamp)}</span>
-                      </div>
-                      <div className="card-actions">
-                        <a
-                          className="primary-button"
-                          href={device.photo.dataUrl}
-                          download={`jazz-recovery-${device.photo.camera || "photo"}.jpg`}
-                        >
-                          <Download size={17} /> Download Recovery Photo
-                        </a>
-                        <button
-                          className="secondary-button"
-                          onClick={downloadReport}
-                        >
-                          <Download size={17} /> Download Recovery Report
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty-state photo-empty">
-                      <Camera size={32} />
-                      <h3>No recovery photo yet</h3>
-                      <p>
-                        Request the front or back camera using the recovery
-                        controls above.
-                      </p>
-                    </div>
-                  )}
-                </article>
+                <RecoveryPhotoCard
+                  device={device}
+                  formatTime={formatTime}
+                  onDownloadReport={downloadReport}
+                />
               </section>
             </>
           )}
