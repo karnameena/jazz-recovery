@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./services/api";
 import { Login } from "./components/auth/Login";
+import { DashboardHeader } from "./components/dashboard/DashboardHeader";
 import { base64UrlToBytes, serializeCredential } from "./services/passkeys";
 import { createRoot } from "react-dom/client";
 import {
@@ -410,48 +411,16 @@ function App() {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
-      <header className="topbar glass-panel">
-        <div className="brand-block">
-          <div className="brand-logo">
-            <img
-              src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png"
-              alt="Jazz Logo"
-              width={95}
-              height={95}
-            />
-          </div>
-          <div>
-            <div className="eyebrow">JAZZ RECOVERY</div>
-            <h1>Lost Mode Command Center</h1>
-          </div>
-        </div>
-        <div className="topbar-actions">
-          <div className="fleet-pill">
-            <Radio size={16} />
-            <span>
-              {onlineCount}/{devices.length} online
-            </span>
-          </div>
-          <button
-            className="ghost-button"
-            onClick={() => {
-              void load();
-              if (selected) void refresh(selected);
-            }}
-          >
-            <RefreshCw size={17} /> Refresh
-          </button>
-          <button className="ghost-button" onClick={() => void registerPasskey()}>
-            <LockKeyhole size={17} /> Register passkey
-          </button>
-          <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
-            <LockKeyhole size={17} /> Set recovery PIN
-          </button>
-          <button className="ghost-button danger-hover" onClick={logout}>
-            <LogOut size={17} /> Logout
-          </button>
-        </div>
-      </header>
+      <DashboardHeader
+        onlineCount={onlineCount}
+        deviceCount={devices.length}
+        selected={selected}
+        load={load}
+        refresh={refresh}
+        registerPasskey={registerPasskey}
+        setupRecoveryPin={setupRecoveryPin}
+        logout={logout}
+      />
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
