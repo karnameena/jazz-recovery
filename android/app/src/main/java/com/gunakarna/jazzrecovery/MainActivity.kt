@@ -63,7 +63,7 @@ class MainActivity : Activity() {
             text = name; setOnClickListener { run() }
         }) }
         label("JAZZ RECOVERY · v1.0.0")
-        label("Installation device ID: ${currentDeviceId()}")
+        label("Temporary app installation ID (may differ from your registered website device ID): ${currentDeviceId()}")
         label("Server setup")
         server = field("https://server.example.com", prefs.getString("server", "") ?: "")
         action("Save HTTPS URL") {
@@ -75,11 +75,11 @@ class MainActivity : Activity() {
         action("Test /health") { request("GET", "/health", null, false) }
 
         label("Re-pair an existing website device")
-        label("Use the same username and password as the website, and paste the exact device ID shown there. Re-pairing keeps the existing device record and history.")
+        label("Use the same username and password as the website. Paste the exact registered Device ID shown in the website dashboard. Do not use the temporary installation ID above unless it exactly matches the website. Re-pairing keeps the existing device record and history.")
         repairUsername = field("Website username", "")
         repairPassword = field("Website password", "")
         repairPassword.inputType = 129
-        registeredDeviceId = field("Existing website device ID", currentDeviceId())
+        registeredDeviceId = field("Existing website device ID (paste exact ID from website)", "")
         repairDeviceName = field("Device name", "${Build.MANUFACTURER} ${Build.MODEL}")
         repairImei = field("IMEI (optional)", "")
         action("Re-pair existing device") { repairExistingDevice() }
