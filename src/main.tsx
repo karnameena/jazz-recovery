@@ -6,19 +6,12 @@ import { DeviceSidebar } from "./components/dashboard/DeviceSidebar";
 import { DeviceHero } from "./components/dashboard/DeviceHero";
 import { LocationCard } from "./components/dashboard/LocationCard";
 import { RecoveryPhotoCard } from "./components/dashboard/RecoveryPhotoCard";
+import { RecoveryActionGrid } from "./components/dashboard/RecoveryActionGrid";
+import { LocationServicesCard } from "./components/dashboard/LocationServicesCard";
 import type { Device, LocationState } from "./types/device";
 import { base64UrlToBytes, serializeCredential } from "./services/passkeys";
 import { createRoot } from "react-dom/client";
-import {
-  Camera,
-  LocateFixed,
-  MapPin,
-  Mic,
-  RefreshCw,
-  ShieldCheck,
-  Smartphone,
-  Volume2,
-} from "lucide-react";
+import { RefreshCw, Smartphone } from "lucide-react";
 import "./styles.css";
 import "./responsive-fixes.css";
 import { VoiceInput } from "./voice/VoiceInput";
@@ -401,180 +394,22 @@ function App() {
             <>
               <DeviceHero device={device} formatTime={formatTime} />
 
-              <section className="section-heading">
-                <div>
-                  <span className="eyebrow">RECOVERY ACTIONS</span>
-                  <h2>Remote controls</h2>
-                </div>
-                <span>
-                  Commands use the existing allowlisted recovery workflow.
-                </span>
-              </section>
-              <section className="action-grid">
-                <button
-                  disabled={isActionBusy("DEVICE_STATUS")}
-                  onClick={() => action("DEVICE_STATUS")}
-                >
-                  <Smartphone />
-                  <div>
-                    <strong>Device Status</strong>
-                    <span>Refresh device health</span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("GET_LOCATION")}
-                  onClick={() => action("GET_LOCATION")}
-                >
-                  <LocateFixed />
-                  <div>
-                    <strong>Get Location</strong>
-                    <span>
-                      {isActionBusy("GET_LOCATION")
-                        ? "Request in progress…"
-                        : "Request latest position"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RING_DEVICE")}
-                  onClick={() => action("RING_DEVICE")}
-                >
-                  <Volume2 />
-                  <div>
-                    <strong>Ring Device</strong>
-                    <span>Play recovery alert</span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RECOVERY_PHOTO", { camera: "front" })}
-                  onClick={() => action("RECOVERY_PHOTO", { camera: "front" })}
-                >
-                  <Camera />
-                  <div>
-                    <strong>Front Camera</strong>
-                    <span>
-                      {isActionBusy("RECOVERY_PHOTO", { camera: "front" })
-                        ? "Capturing…"
-                        : "Request recovery photo"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  disabled={isActionBusy("RECOVERY_PHOTO", { camera: "rear" })}
-                  onClick={() => action("RECOVERY_PHOTO", { camera: "rear" })}
-                >
-                  <Camera />
-                  <div>
-                    <strong>Back Camera</strong>
-                    <span>
-                      {isActionBusy("RECOVERY_PHOTO", { camera: "rear" })
-                        ? "Capturing…"
-                        : "Request recovery photo"}
-                    </span>
-                  </div>
-                </button>
-                <button
-                  className="critical-action"
-                  disabled={isActionBusy("SET_RECOVERY_MODE", {
-                    enabled: true,
-                  })}
-                  onClick={() => action("SET_RECOVERY_MODE", { enabled: true })}
-                >
-                  <ShieldCheck />
-                  <div>
-                    <strong>Enable Lost Mode</strong>
-                    <span>Secure recovery state</span>
-                  </div>
-                </button>
-                <button
-                  className="voice-toggle"
-                  aria-expanded={voiceOpen}
-                  aria-controls="recovery-voice-panel"
-                  onClick={() => setVoiceOpen((open) => !open)}
-                >
-                  <Mic />
-                  <div>
-                    <strong>Voice Input</strong>
-                    <span>Remote recovery voice broadcast</span>
-                  </div>
-                </button>
-              </section>
+              <RecoveryActionGrid
+                isActionBusy={isActionBusy}
+                onAction={action}
+                voiceOpen={voiceOpen}
+                onToggleVoice={() => setVoiceOpen((open) => !open)}
+              />
 
-              <section
-                className="glass-panel"
-                aria-label="Device Location Services"
-                style={{ padding: 22, marginTop: 20 }}
-              >
-                <div className="card-heading">
-                  <div>
-                    <span className="eyebrow">DEVICE SYSTEM SETTINGS</span>
-                    <h2>Location Services</h2>
-                  </div>
-                  <MapPin size={22} />
-                </div>
-                <div className="location-meta">
-                  <div>
-                    <span>Current status</span>
-                    <strong>
-                      {!device.online
-                        ? "Device Offline"
-                        : device.locationServices || "Unknown"}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Last device-confirmed status</span>
-                    <strong>
-                      {formatTime(device.locationServicesLastConfirmed)}
-                    </strong>
-                  </div>
-                </div>
-                <p style={{ opacity: 0.75, margin: "12px 0" }}>
-                  If Location is turned off, click “Turn On” to enable it and
-                  get the device’s exact location.
-                </p>
-                <div className="card-actions">
-                  <button
-                    className="primary-button"
-                    disabled={locationBusy}
-                    onClick={() => void locationControl(true)}
-                  >
-                    <MapPin size={17} /> Turn ON Location
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={locationBusy}
-                    onClick={() => void locationControl(false)}
-                  >
-                    <MapPin size={17} /> Turn OFF Location
-                  </button>
-                  <button
-                    className="secondary-button"
-                    disabled={
-                      locationBusy ||
-                      isActionBusy("DEVICE_STATUS") ||
-                      !device.online
-                    }
-                    onClick={() => action("DEVICE_STATUS")}
-                  >
-                    <RefreshCw size={17} /> Refresh Status
-                  </button>
-                </div>
-                {locationFeedback && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className="command-banner"
-                    style={{ marginTop: 12 }}
-                  >
-                    {locationBusy && <RefreshCw size={16} className="spin" />}
-                    <span>{locationFeedback}</span>
-                  </div>
-                )}
-                <p style={{ opacity: 0.7, fontSize: 12 }}>
-                  Remote ON/OFF requires local opt-in and either Android that
-                  Location Services changed.
-                </p>
-              </section>
+              <LocationServicesCard
+                device={device}
+                locationBusy={locationBusy}
+                locationFeedback={locationFeedback}
+                formatTime={formatTime}
+                isActionBusy={isActionBusy}
+                onLocationControl={locationControl}
+                onAction={action}
+              />
 
               {voiceOpen && (
                 <VoiceInput
