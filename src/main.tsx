@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./services/api";
 import { Login } from "./components/auth/Login";
+import { base64UrlToBytes, serializeCredential } from "./services/passkeys";
 import { createRoot } from "react-dom/client";
 import {
   BatteryCharging,
@@ -12,12 +13,14 @@ import {
   ExternalLink,
   Gauge,
   LocateFixed,
+  LockKeyhole,
   LogOut,
   MapPin,
   Mic,
   Navigation,
   Radio,
   RefreshCw,
+  ShieldCheck,
   Smartphone,
   Volume2,
   Wifi,
