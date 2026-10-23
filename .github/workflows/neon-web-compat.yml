@@ -29,6 +29,7 @@ jobs:
           import assert from "node:assert/strict";
           const files = [
             "src/main.tsx",
+            "src/App.tsx",
             "src/components/auth/Login.tsx",
             "src/services/api.ts",
             "src/voice/VoiceInput.tsx",
