@@ -3,65 +3,27 @@ import { api } from "./services/api";
 import { Login } from "./components/auth/Login";
 import { DashboardHeader } from "./components/dashboard/DashboardHeader";
 import { DeviceSidebar } from "./components/dashboard/DeviceSidebar";
+import { DeviceHero } from "./components/dashboard/DeviceHero";
+import type { Device, LocationState } from "./types/device";
 import { base64UrlToBytes, serializeCredential } from "./services/passkeys";
 import { createRoot } from "react-dom/client";
 import {
-  BatteryCharging,
   Camera,
-  ChevronRight,
-  CircleDot,
   Crosshair,
   Download,
   ExternalLink,
-  Gauge,
   LocateFixed,
-  LockKeyhole,
-  LogOut,
   MapPin,
   Mic,
   Navigation,
-  Radio,
   RefreshCw,
   ShieldCheck,
   Smartphone,
   Volume2,
-  Wifi,
 } from "lucide-react";
 import "./styles.css";
 import "./responsive-fixes.css";
 import { VoiceInput } from "./voice/VoiceInput";
-
-type LocationState = {
-  latitude: number;
-  longitude: number;
-  accuracyMeters?: number | null;
-  timestamp?: number | string | null;
-};
-
-type PhotoState = {
-  dataUrl: string;
-  camera?: string | null;
-  timestamp?: number | string | null;
-};
-
-type Device = {
-  id: number;
-  deviceId?: string;
-  deviceName: string;
-  deviceType: string;
-  online: boolean;
-  battery: number | null;
-  charging?: boolean;
-  network: string;
-  lastSeen: string | null;
-  locationServices?: "ON" | "OFF" | "UNKNOWN" | "OFFLINE";
-  locationServicesLastConfirmed?: number | null;
-  mode: string;
-  location: LocationState | null;
-  photo: PhotoState | null;
-};
-
-
 
 function formatTime(value: string | number | null | undefined) {
   if (!value) return "Unknown";
@@ -439,59 +401,7 @@ function App() {
             </section>
           ) : (
             <>
-              <section className="device-hero glass-panel">
-                <div className="hero-main">
-                  <div
-                    className={`status-orb ${device.online ? "live" : "offline-orb"}`}
-                  >
-                    <CircleDot size={25} />
-                  </div>
-                  <div>
-                    <div
-                      className={`status-label ${device.online ? "online-text" : "offline-text"}`}
-                    >
-                      {device.online
-                        ? "ONLINE • LIVE CONNECTION"
-                        : "OFFLINE • LAST KNOWN STATE"}
-                    </div>
-                    <h2>
-                      {device.deviceName ||
-                        device.deviceId ||
-                        "Registered device"}
-                    </h2>
-                    <div className="device-id-line">
-                      {device.deviceId || "Registered device"} ·{" "}
-                      {device.deviceType}
-                    </div>
-                  </div>
-                </div>
-                <div className="mode-badge">
-                  <ShieldCheck size={17} /> {device.mode}
-                </div>
-                <div className="metrics-grid">
-                  <div className="metric-card">
-                    <BatteryCharging size={20} />
-                    <div>
-                      <span>Battery</span>
-                      <strong>{device.battery ?? "--"}%</strong>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <Wifi size={20} />
-                    <div>
-                      <span>Network</span>
-                      <strong>{device.network || "Unknown"}</strong>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <Gauge size={20} />
-                    <div>
-                      <span>Last Seen</span>
-                      <strong>{formatTime(device.lastSeen)}</strong>
-                    </div>
-                  </div>
-                </div>
-              </section>
+              <DeviceHero device={device} formatTime={formatTime} />
 
               <section className="section-heading">
                 <div>
