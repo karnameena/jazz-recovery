@@ -255,7 +255,7 @@ export function BillingPanel() {
   }
   const end = subscription?.status === "trialing" ? subscription.trialEndsAt : subscription?.paidEndsAt;
   const endLabel = end ? new Date(end).toLocaleString() : "Not available";
-  const selectedPricePaise = plans[plan];
+  const selectedPricePaise = preview ? preview.amountPaise : plans[plan];
   return <section className="glass-panel billing-panel">
     <div className="card-heading"><div><span className="eyebrow">ACCOUNT PLAN</span><h2>Trial & subscription</h2></div><span className="count-badge">{subscription?.status || "loading"}</span></div>
     <p>Your 7-day free trial is followed by an optional subscription. Choose monthly or annual billing. Payments are processed securely by Razorpay; no automatic renewal is enabled.</p>
