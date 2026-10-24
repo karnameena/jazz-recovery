@@ -1,0 +1,35 @@
+
+/* Jazz Recovery registration, subscription and owner discount controls */
+.text-button { border: 0; background: transparent; color: var(--cyan); font-weight: 800; cursor: pointer; padding: 4px 6px; }
+.auth-form .checkbox-row { display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:10px; text-align:left; }
+.auth-form .checkbox-row input { width:auto; min-width:18px; }
+.auth-card label { display:flex; flex-direction:column; gap:7px; text-align:left; margin:12px 0; }
+.auth-card label span { color:var(--muted); font-size:.88rem; font-weight:700; }
+.auth-card input, .billing-panel input, .discount-form select { width:100%; min-width:0; color:var(--text); background:rgba(4,9,23,.72); border:1px solid var(--line); border-radius:12px; padding:12px 13px; outline:none; }
+.auth-card input:focus, .billing-panel input:focus, .discount-form select:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(111,140,255,.15); }
+.full-width { width:100%; justify-content:center; margin-top:10px; }
+.billing-panel { padding:22px; margin-bottom:20px; }
+.billing-panel > p { color:var(--muted); line-height:1.6; }
+.billing-meta { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.billing-meta > div { min-width:0; padding:13px; border:1px solid var(--line); border-radius:14px; background:rgba(4,9,23,.35); }
+.billing-meta span { display:block; color:var(--muted); font-size:.8rem; }
+.billing-meta strong { display:block; overflow-wrap:anywhere; margin-top:5px; }
+.billing-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.billing-actions input { flex:1 1 220px; }
+.billing-price { padding:12px; border:1px solid var(--line); border-radius:12px; }
+.billing-message { overflow-wrap:anywhere; }
+.discount-admin { border-top:1px solid var(--line); margin-top:22px; padding-top:20px; }
+.discount-admin h3 { margin:8px 0 14px; }
+.discount-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.discount-form label { min-width:0; display:flex; flex-direction:column; gap:6px; color:var(--muted); font-size:.85rem; }
+.discount-form button { grid-column:1/-1; justify-content:center; }
+.discount-list { display:grid; gap:8px; margin-top:16px; }
+.discount-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; }
+.discount-row span { min-width:0; overflow-wrap:anywhere; font-size:.9rem; }
+@media(max-width:560px) { .billing-meta,.discount-form { grid-template-columns:1fr; } .discount-form button { grid-column:auto; } .billing-actions > button { width:100%; justify-content:center; } .discount-row { align-items:flex-start; flex-direction:column; } }
+
+.billing-plans { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:16px 0; }
+.billing-plans button { justify-content:center; }
+@media(max-width:560px) { .billing-plans { grid-template-columns:1fr; } }
+
+.trial-toast { position:fixed; top:18px; right:18px; z-index:1000; max-width:min(420px,calc(100vw - 36px)); padding:14px 18px; border:1px solid rgba(70,220,170,.45); border-radius:14px; background:#0d3028; color:#d9fff1; box-shadow:0 12px 36px rgba(0,0,0,.3); font-weight:750; }

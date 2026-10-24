@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   BatteryCharging,
   Camera,
+  Copy,
   ChevronRight,
   CircleDot,
   Crosshair,
@@ -13,7 +14,6 @@ import {
   LockKeyhole,
   LogOut,
   MapPin,
-  Mic,
   Navigation,
   Radio,
   RefreshCw,
@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import "./responsive-fixes.css";
-import { VoiceInput } from "./voice/VoiceInput";
+import { BillingPanel } from "./billing-ui";
 
 type LocationState = {
   latitude: number;
@@ -54,6 +54,7 @@ type Device = {
   mode: string;
   location: LocationState | null;
   photo: PhotoState | null;
+  imei?: string | null;
 };
 
 const rawApiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
@@ -198,7 +199,7 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
   return name;
 }
 
-function Login({ done }: { done: () => void }) {
+function Login({ done }: { done: (registration?: { trialActivated: boolean }) => void }) {
   const [registering, setRegistering] = useState(false);
   const [forgotPassword, setForgotPassword] = useState(false);
   const [useRecoveryPin, setUseRecoveryPin] = useState(false);
@@ -214,6 +215,7 @@ function Login({ done }: { done: () => void }) {
     setSubmitting(true);
     const form = event.currentTarget;
     const fields = new FormData(form);
+    let trialActivated = false;
     const username = String(fields.get("username") || "").trim();
     let password = String(fields.get("password") || "");
     try {
@@ -264,7 +266,8 @@ function Login({ done }: { done: () => void }) {
         const body = JSON.stringify({ username, password, confirmPassword, deviceName, imei, deviceId, deviceToken, recoveryPin, confirmRecoveryPin });
         password = "";
         if (passwordRef.current) passwordRef.current.value = "";
-        await api("/api/auth/register", { method: "POST", body });
+        const registration = await api("/api/auth/register", { method: "POST", body });
+        trialActivated = Boolean(registration.trialActivated);
       } else {
         const body = JSON.stringify({ username, password });
         password = "";
@@ -272,7 +275,7 @@ function Login({ done }: { done: () => void }) {
         await api("/api/auth/login", { method: "POST", body });
       }
       form.reset();
-      done();
+      done(registering ? { trialActivated } : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : (registering ? "Registration failed" : "Login failed"));
     } finally {
@@ -349,7 +352,10 @@ function App() {
   const [device, setDevice] = useState<Device | null>(null);
   const [msg, setMsg] = useState("");
   const [activeCount, setActiveCount] = useState(0);
-  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const [imeiVisible, setImeiVisible] = useState(false);
+  const [imeiCopyMessage, setImeiCopyMessage] = useState("");
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationFeedback, setLocationFeedback] = useState("");
 
@@ -398,6 +404,24 @@ function App() {
   useEffect(() => {
     if (login) void load();
   }, [login]);
+
+  useEffect(() => {
+    if (!login) return;
+    let cancelled = false;
+    api("/api/billing/status").then((status) => {
+      if (!cancelled && status.access === "expired") {
+        setBillingOpen(true);
+        setToast("Your access has expired. Choose a subscription plan to continue.");
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [login]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   useEffect(() => {
     if (login && selected) void refresh(selected);
   }, [login, selected]);
@@ -645,12 +669,17 @@ function App() {
         <RefreshCw className="spin" /> Loading secure recovery…
       </div>
     );
-  if (!login) return <Login done={() => setLogin(true)} />;
+  if (!login) return <Login done={(registration) => {
+    setLogin(true);
+    if (registration?.trialActivated) setToast("Your 7-day free trial is now active.");
+    else if (registration) setToast("Your Jazz Recovery account was created successfully.");
+  }} />;
 
   return (
     <div className="app-shell">
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
+      {toast && <div className="toast-notice" role="status" aria-live="polite">{toast}</div>}
 
       <header className="topbar glass-panel">
         <div className="brand-block">
@@ -689,11 +718,16 @@ function App() {
           <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
             <LockKeyhole size={17} /> Set recovery PIN
           </button>
+          <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>
+            <ShieldCheck size={17} /> {billingOpen ? "Hide subscription" : "Subscription"}
+          </button>
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
           </button>
         </div>
       </header>
+
+      {billingOpen && <div className="billing-panel-wrap"><BillingPanel /></div>}
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
@@ -715,7 +749,7 @@ function App() {
               <button
                 key={item.id}
                 className={`device-row ${selected === item.id ? "selected" : ""}`}
-                onClick={() => setSelected(item.id)}
+                onClick={() => { setSelected(item.id); setImeiVisible(false); setImeiCopyMessage(""); }}
               >
                 <div className={`device-avatar ${item.online ? "live" : ""}`}>
                   <Smartphone size={21} />
@@ -894,17 +928,39 @@ function App() {
                 </button>
                 <button
                   className="voice-toggle"
-                  aria-expanded={voiceOpen}
-                  aria-controls="recovery-voice-panel"
-                  onClick={() => setVoiceOpen((open) => !open)}
+                  aria-expanded={imeiVisible}
+                  aria-controls="registered-imei-panel"
+                  onClick={() => { setImeiVisible((visible) => !visible); setImeiCopyMessage(""); }}
                 >
-                  <Mic />
+                  <Smartphone />
                   <div>
-                    <strong>Voice Input</strong>
-                    <span>Remote recovery voice broadcast</span>
+                    <strong>{imeiVisible ? "Hide IMEI" : "Show IMEI"}</strong>
+                    <span>View this device's registered IMEI</span>
                   </div>
                 </button>
               </section>
+
+              {imeiVisible && (
+                <section id="registered-imei-panel" className="glass-panel imei-reveal" aria-label="Registered IMEI">
+                  {device.imei ? (
+                    <div className="imei-reveal-row">
+                      <div>
+                        <span className="eyebrow">REGISTERED IMEI</span>
+                        <strong className="imei-number">{device.imei}</strong>
+                      </div>
+                      <button type="button" className="secondary-button" onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(device.imei || "");
+                          setImeiCopyMessage("IMEI copied to clipboard.");
+                        } catch {
+                          setImeiCopyMessage("Clipboard unavailable. Select the IMEI and copy it manually.");
+                        }
+                      }}><Copy size={16} /> Copy IMEI</button>
+                    </div>
+                  ) : <p>No IMEI is registered for this device.</p>}
+                  {imeiCopyMessage && <p className="imei-copy-message" role="status">{imeiCopyMessage}</p>}
+                </section>
+              )}
 
               <section
                 className="glass-panel"
@@ -981,19 +1037,6 @@ function App() {
                   Location Services changed.
                 </p>
               </section>
-
-              {voiceOpen && (
-                <VoiceInput
-                  key={selected}
-                  deviceName={
-                    devices.find((item) => item.id === selected)?.deviceName ||
-                    "Selected device"
-                  }
-                  disabled={activeCount > 0 || device.id !== selected}
-                  onAction={action}
-                  onClose={() => setVoiceOpen(false)}
-                />
-              )}
 
               {(msg || activeCount > 0) && (
                 <div className="command-banner glass-panel">
