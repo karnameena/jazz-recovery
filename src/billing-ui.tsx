@@ -123,6 +123,25 @@ export function BillingPanel() {
   const [percent, setPercent] = useState("10");
   const [expires, setExpires] = useState("");
   const [limit, setLimit] = useState("");
+  const [bootstrapSecret, setBootstrapSecret] = useState("");
+  const [claimingAdmin, setClaimingAdmin] = useState(false);
+
+  async function claimAdmin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (claimingAdmin || !bootstrapSecret) return;
+    setClaimingAdmin(true);
+    setMessage("");
+    try {
+      await request("/api/billing/admin/claim", { method: "POST", body: JSON.stringify({ bootstrapSecret }) });
+      setBootstrapSecret("");
+      await refreshCodes();
+      setMessage("Owner billing controls enabled. Remove the one-time bootstrap secret from the server environment now.");
+    } catch (e) {
+      setMessage(errorMessage(e));
+    } finally {
+      setClaimingAdmin(false);
+    }
+  }
 
   async function refresh() {
     const result = await request("/api/billing/status");
@@ -230,6 +249,14 @@ export function BillingPanel() {
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
+    {!isOwner && <div className="discount-admin">
+      <div className="eyebrow">FIRST-TIME OWNER SETUP</div>
+      <p>Only the first authenticated account can claim billing administration. Enter the one-time secret configured privately on the server. Do not share it.</p>
+      <form className="discount-form" onSubmit={claimAdmin}>
+        <label><span>One-time bootstrap secret</span><input type="password" value={bootstrapSecret} onChange={e=>setBootstrapSecret(e.target.value)} autoComplete="off" required /></label>
+        <button className="primary-button" type="submit" disabled={claimingAdmin}>{claimingAdmin ? "Verifying owner setup…" : "Claim billing admin"}</button>
+      </form>
+    </div>}
     {isOwner && <div className="discount-admin"><div className="eyebrow">OWNER CONTROLS</div><h3>Discount code management</h3>
       <form onSubmit={createCode} className="discount-form">
         {editingId === null
