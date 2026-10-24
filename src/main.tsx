@@ -411,7 +411,7 @@ function App() {
     api("/api/billing/status").then((status) => {
       if (!cancelled && status.access === "expired") {
         setBillingOpen(true);
-        setToast("Your trial has ended. Choose a subscription plan to continue.");
+        setToast("Your access has expired. Choose a subscription plan to continue.");
       }
     }).catch(() => {});
     return () => { cancelled = true; };
