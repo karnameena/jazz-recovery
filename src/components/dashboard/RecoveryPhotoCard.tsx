@@ -23,6 +23,7 @@ export function RecoveryPhotoCard({
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoError, setPhotoError] = useState("");
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [reloadAttempt, setReloadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -42,6 +43,7 @@ export function RecoveryPhotoCard({
     setPhotoLoading(true);
     apiBlob(`/api/devices/${device.id}/photo-content`)
       .then((blob) => new Promise<void>((resolve, reject) => {
+        if (!active) { resolve(); return; }
         objectUrl = URL.createObjectURL(blob);
         const probe = new Image();
         probe.onload = () => {
@@ -52,7 +54,8 @@ export function RecoveryPhotoCard({
         probe.src = objectUrl;
       }))
       .then(() => {
-        if (active) setPhotoUrl(objectUrl);
+        if (active && objectUrl) setPhotoUrl(objectUrl);
+        else if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ""; }
       })
       .catch((error) => {
         if (objectUrl) {
@@ -83,6 +86,7 @@ export function RecoveryPhotoCard({
     device.photo?.mimeType,
     device.photo?.sizeBytes,
     device.photo?.available,
+    reloadAttempt,
   ]);
 
   async function downloadCurrentPhoto() {
@@ -166,7 +170,16 @@ export function RecoveryPhotoCard({
           </div>
 
           {photoError ? (
-            <p role="alert" className="photo-error">{photoError}</p>
+            <div className="photo-error" role="alert">
+              <p>{photoError}</p>
+              <button
+                className="secondary-button"
+                onClick={() => setReloadAttempt((attempt) => attempt + 1)}
+                disabled={photoLoading}
+              >
+                {photoLoading ? "Retrying…" : "Retry Loading Photo"}
+              </button>
+            </div>
           ) : null}
         </>
       ) : (
