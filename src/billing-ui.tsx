@@ -257,13 +257,13 @@ export function BillingPanel() {
   return <section className="glass-panel billing-panel">
     <div className="card-heading"><div><span className="eyebrow">ACCOUNT PLAN</span><h2>Trial & subscription</h2></div><span className="count-badge">{subscription?.status || "loading"}</span></div>
     <p>Your 7-day free trial is followed by an optional subscription. Choose monthly or annual billing. Payments are processed securely by Razorpay; no automatic renewal is enabled.</p>
-    {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or annual access has ended. Subscribe to continue with your annual plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
+    {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or annual access has ended. Subscribe to continue with your selected plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
     <div className="billing-meta"><div><span>Current status</span><strong>{subscription?.status || "Loading…"}</strong></div><div><span>Access ends</span><strong>{endLabel}</strong></div></div>
     <div className="billing-plans" role="group" aria-label="Subscription plan">
       <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setPreview(null);}}>Monthly · ₹49</button>
       <button type="button" className={plan === "annual" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("annual");setPreview(null);}}>Annual · ₹399</button>
     </div>
-    <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40} disabled={plan === "monthly"}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
+    <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
@@ -287,7 +287,7 @@ export function BillingPanel() {
         <label><span>Max redemptions overall (optional)</span><input type="number" min="1" max="1000000" value={limit} onChange={e=>setLimit(e.target.value)} /></label>
         <label><span>Max uses per user</span><input type="number" min="1" max="1000000" value={perUserLimit} onChange={e=>setPerUserLimit(e.target.value)} required /></label>
         <button className="primary-button" type="submit">{editingId === null ? "Create discount code" : "Save discount changes"}</button>
-        {editingId !== null && <button className="secondary-button" type="button" onClick={()=>{setEditingId(null);setExpires("");setLimit("");}}>Cancel edit</button>}
+        {editingId !== null && <button className="secondary-button" type="button" onClick={()=>{setEditingId(null);setStartsAt("");setExpires("");setLimit("");setPerUserLimit("1");setEligiblePlan("annual");}}>Cancel edit</button>}
       </form>
       <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>{item.label} · {item.percent_off}% · {item.eligible_plan} · {item.redeemed_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.per_user_limit}/user · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
     </div>}
