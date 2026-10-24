@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Camera, Download, Trash2 } from "lucide-react";
 import { apiBlob } from "../../services/api";
 import type { Device } from "../../types/device";
@@ -24,44 +24,52 @@ export function RecoveryPhotoCard({
   const [photoError, setPhotoError] = useState("");
   const [photoLoading, setPhotoLoading] = useState(false);
   const [reloadAttempt, setReloadAttempt] = useState(0);
+  const displayedUrlRef = useRef("");
 
   useEffect(() => {
     let active = true;
-    let objectUrl = "";
+    let pendingUrl = "";
 
-    setPhotoUrl("");
     setPhotoError("");
 
     if (!device.photo) {
       setPhotoLoading(false);
+      const previousUrl = displayedUrlRef.current;
+      displayedUrlRef.current = "";
+      setPhotoUrl("");
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
       return () => {
         active = false;
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        if (pendingUrl) URL.revokeObjectURL(pendingUrl);
       };
     }
 
+    // Keep the currently displayed image visible while the latest image is
+    // fetched and decoded. Only swap URLs after the replacement is renderable.
     setPhotoLoading(true);
     apiBlob(`/api/devices/${device.id}/photo-content`)
       .then((blob) => new Promise<void>((resolve, reject) => {
         if (!active) { resolve(); return; }
-        objectUrl = URL.createObjectURL(blob);
+        pendingUrl = URL.createObjectURL(blob);
         const probe = new Image();
         probe.onload = () => {
           if (probe.naturalWidth > 0 && probe.naturalHeight > 0) resolve();
           else reject(new Error("The current recovery photo decoded with zero dimensions."));
         };
         probe.onerror = () => reject(new Error("The current recovery photo could not be decoded as an image."));
-        probe.src = objectUrl;
+        probe.src = pendingUrl;
       }))
       .then(() => {
-        if (active && objectUrl) setPhotoUrl(objectUrl);
-        else if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ""; }
+        if (!active) return;
+        if (!pendingUrl) return;
+        const previousUrl = displayedUrlRef.current;
+        displayedUrlRef.current = pendingUrl;
+        setPhotoUrl(pendingUrl);
+        pendingUrl = "";
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        setPhotoError("");
       })
       .catch((error) => {
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = "";
-        }
         if (active) {
           setPhotoError(
             error instanceof Error
@@ -72,11 +80,18 @@ export function RecoveryPhotoCard({
       })
       .finally(() => {
         if (active) setPhotoLoading(false);
+        if (pendingUrl) {
+          URL.revokeObjectURL(pendingUrl);
+          pendingUrl = "";
+        }
       });
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (pendingUrl) {
+        URL.revokeObjectURL(pendingUrl);
+        pendingUrl = "";
+      }
     };
   }, [
     device.id,
@@ -88,6 +103,12 @@ export function RecoveryPhotoCard({
     device.photo?.available,
     reloadAttempt,
   ]);
+
+  useEffect(() => () => {
+    const displayedUrl = displayedUrlRef.current;
+    displayedUrlRef.current = "";
+    if (displayedUrl) URL.revokeObjectURL(displayedUrl);
+  }, []);
 
   async function downloadCurrentPhoto() {
     try {
@@ -111,6 +132,14 @@ export function RecoveryPhotoCard({
     }
   }
 
+  function handleDisplayedImageError() {
+    const failedUrl = displayedUrlRef.current;
+    displayedUrlRef.current = "";
+    setPhotoUrl("");
+    if (failedUrl) URL.revokeObjectURL(failedUrl);
+    setPhotoError("The image could not be displayed. Retry loading the current photo.");
+  }
+
   return (
     <article className="photo-card glass-panel">
       <div className="card-heading">
@@ -128,10 +157,7 @@ export function RecoveryPhotoCard({
               <img
                 src={photoUrl}
                 alt={`Current recovery photo from the ${device.photo.camera || "device"} camera`}
-                onError={() => {
-                  setPhotoUrl("");
-                  setPhotoError("The image could not be displayed. Capture a new photo or retry loading.");
-                }}
+                onError={handleDisplayedImageError}
               />
             ) : (
               <div className="empty-state photo-empty" role="status">
@@ -157,7 +183,7 @@ export function RecoveryPhotoCard({
             <button
               className="primary-button"
               onClick={() => void downloadCurrentPhoto()}
-              disabled={!photoUrl || photoLoading}
+              disabled={!photoUrl}
             >
               <Download size={17} /> Download Current Photo
             </button>
