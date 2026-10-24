@@ -76,6 +76,13 @@ export function Login({ done }: { done: () => void }) {
         if (passwordRef.current) passwordRef.current.value = "";
         await api("/api/auth/login", { method: "POST", body });
       }
+      try {
+        await api("/api/auth/session");
+      } catch {
+        throw new Error(
+          "Sign-in was accepted, but the browser session could not be confirmed. Use the same host for the website and API, and enable the local Vite API proxy before trying again.",
+        );
+      }
       form.reset();
       done();
     } catch (err) {

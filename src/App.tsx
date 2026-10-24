@@ -98,6 +98,7 @@ export function App() {
     return data.device as Device;
   }
 
+
   useEffect(() => {
     api("/api/auth/session")
       .then(() => setLogin(true))
@@ -106,10 +107,32 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (login) void load();
+    if (!login) return;
+    void load().catch((error) => {
+      const message = error instanceof Error ? error.message : "Could not load devices.";
+      if (/authentication required/i.test(message)) {
+        setLogin(false);
+        setDevices([]);
+        setDevice(null);
+        setMsg("Your session is no longer valid. Please sign in again.");
+      } else {
+        setMsg(message);
+      }
+    });
   }, [login]);
   useEffect(() => {
-    if (login && selected) void refresh(selected);
+    if (!login || !selected) return;
+    void refresh(selected).catch((error) => {
+      const message = error instanceof Error ? error.message : "Could not refresh the selected device.";
+      if (/authentication required/i.test(message)) {
+        setLogin(false);
+        setDevices([]);
+        setDevice(null);
+        setMsg("Your session is no longer valid. Please sign in again.");
+      } else {
+        setMsg(message);
+      }
+    });
   }, [login, selected]);
   useEffect(() => {
     if (!login || !selected) return;
