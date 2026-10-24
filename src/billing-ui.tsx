@@ -119,7 +119,7 @@ export function BillingPanel() {
   const [isOwner, setIsOwner] = useState(false);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;expires_at:string|null;redeemed_count:number;max_redemptions:number|null}>>([]);
   const [newCode, setNewCode] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [percent, setPercent] = useState("10");
   const [expires, setExpires] = useState("");
   const [limit, setLimit] = useState("");
@@ -223,7 +223,7 @@ export function BillingPanel() {
     {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or annual access has ended. Subscribe to continue with your annual plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
     <div className="billing-meta"><div><span>Current status</span><strong>{subscription?.status || "Loading…"}</strong></div><div><span>Access ends</span><strong>{endLabel}</strong></div></div>
     <div className="billing-plans" role="group" aria-label="Subscription plan">
-      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setPreview(null);}}>Monthly · ₹49</button>
+      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setCode("");setPreview(null);}}>Monthly · ₹49</button>
       <button type="button" className={plan === "annual" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("annual");setPreview(null);}}>Annual · ₹399</button>
     </div>
     <div className="billing-actions"><input aria-label="Discount code" placeholder={plan === "annual" ? "Annual discount code (optional)" : "Discount codes apply to annual only"} value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40} disabled={plan === "monthly"}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy || plan === "monthly"}>Apply code</button></div>
