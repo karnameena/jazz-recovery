@@ -27,3 +27,7 @@
 .discount-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; }
 .discount-row span { min-width:0; overflow-wrap:anywhere; font-size:.9rem; }
 @media(max-width:560px) { .billing-meta,.discount-form { grid-template-columns:1fr; } .discount-form button { grid-column:auto; } .billing-actions > button { width:100%; justify-content:center; } .discount-row { align-items:flex-start; flex-direction:column; } }
+
+.billing-plans { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:16px 0; }
+.billing-plans button { justify-content:center; }
+@media(max-width:560px) { .billing-plans { grid-template-columns:1fr; } }
