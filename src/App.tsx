@@ -98,16 +98,6 @@ export function App() {
     return data.device as Device;
   }
 
-  async function deleteCurrentPhoto(id: number) {
-    if (!window.confirm("Permanently delete the current recovery photo for this device?")) return;
-    try {
-      await api(`/api/devices/${id}/photo`, { method: "DELETE" });
-      await refresh(id);
-      setMsg("Current recovery photo deleted.");
-    } catch (error) {
-      setMsg(error instanceof Error ? error.message : "Could not delete the current recovery photo.");
-    }
-  }
 
   useEffect(() => {
     api("/api/auth/session")
@@ -476,7 +466,6 @@ export function App() {
                   device={device}
                   formatTime={formatTime}
                   onDownloadReport={downloadReport}
-                  onDeletePhoto={() => void deleteCurrentPhoto(device.id)}
                 />
               </section>
             </>
