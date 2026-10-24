@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Camera, Download, Trash2 } from "lucide-react";
+import { Camera, Download } from "lucide-react";
 import { apiBlob } from "../../services/api";
 import type { Device } from "../../types/device";
 
@@ -7,7 +7,6 @@ type RecoveryPhotoCardProps = {
   device: Device;
   formatTime: (value: string | number | null | undefined) => string;
   onDownloadReport: () => void;
-  onDeletePhoto: () => void;
 };
 
 function photoExtension(blobType: string) {
@@ -18,7 +17,6 @@ export function RecoveryPhotoCard({
   device,
   formatTime,
   onDownloadReport,
-  onDeletePhoto,
 }: RecoveryPhotoCardProps) {
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoError, setPhotoError] = useState("");
@@ -69,14 +67,44 @@ export function RecoveryPhotoCard({
         if (previousUrl) URL.revokeObjectURL(previousUrl);
         setPhotoError("");
       })
-      .catch((error) => {
-        if (active) {
-          setPhotoError(
-            error instanceof Error
-              ? error.message
-              : "Could not load the current recovery photo.",
-          );
+      .catch(async (error) => {
+        if (!active) return;
+
+        // Older PostgreSQL rows may still include the current image as a
+        // data URL. If the authenticated binary endpoint is temporarily
+        // unavailable, try that already-owner-scoped legacy value before
+        // showing an error. Never replace a working displayed image until
+        // the fallback has decoded successfully.
+        const legacyDataUrl = device.photo?.legacy && device.photo?.dataUrl
+          ? device.photo.dataUrl
+          : "";
+        if (legacyDataUrl && /^data:image\/(?:jpeg|png);base64,/i.test(legacyDataUrl)) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const probe = new Image();
+              probe.onload = () => probe.naturalWidth > 0 && probe.naturalHeight > 0
+                ? resolve()
+                : reject(new Error("The legacy recovery photo has zero dimensions."));
+              probe.onerror = () => reject(new Error("The legacy recovery photo could not be decoded."));
+              probe.src = legacyDataUrl;
+            });
+            if (!active) return;
+            const previousUrl = displayedUrlRef.current;
+            displayedUrlRef.current = "";
+            setPhotoUrl(legacyDataUrl);
+            if (previousUrl) URL.revokeObjectURL(previousUrl);
+            setPhotoError("");
+            return;
+          } catch {
+            // Report the original binary-endpoint error below; fallback also failed.
+          }
         }
+
+        setPhotoError(
+          error instanceof Error
+            ? error.message
+            : "Could not load the current recovery photo.",
+        );
       })
       .finally(() => {
         if (active) setPhotoLoading(false);
@@ -189,9 +217,6 @@ export function RecoveryPhotoCard({
             </button>
             <button className="secondary-button" onClick={onDownloadReport}>
               <Download size={17} /> Download Recovery Report
-            </button>
-            <button className="secondary-button" onClick={onDeletePhoto}>
-              <Trash2 size={17} /> Delete Current Photo
             </button>
           </div>
 
