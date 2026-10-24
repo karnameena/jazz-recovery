@@ -40,9 +40,18 @@ export function Register({ done, onLogin }: { done: () => void; onLogin: () => v
   const [deviceId] = useState(randomId);
   const [deviceToken] = useState(() => randomToken(32));
   const [created, setCreated] = useState(false);
+  const [trialActivated, setTrialActivated] = useState(false);
+  const [showTrialToast, setShowTrialToast] = useState(false);
   const [deviceName, setDeviceName] = useState("");
   const [imei, setImei] = useState("");
   const [username, setUsername] = useState("");
+
+  useEffect(() => {
+    if (!created || !trialActivated) return;
+    setShowTrialToast(true);
+    const timer = window.setTimeout(() => setShowTrialToast(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [created, trialActivated]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,10 +67,11 @@ export function Register({ done, onLogin }: { done: () => void; onLogin: () => v
     }
     setBusy(true);
     try {
-      await request("/api/auth/register", { method: "POST", body: JSON.stringify({
+      const result = await request("/api/auth/register", { method: "POST", body: JSON.stringify({
         username, password, deviceName, imei, deviceId, deviceToken
       }) });
       form.reset();
+      setTrialActivated(result.trialActivated === true);
       setCreated(true);
     } catch (e) { setError(errorMessage(e)); }
     finally { setBusy(false); }
@@ -74,8 +84,9 @@ export function Register({ done, onLogin }: { done: () => void; onLogin: () => v
   }
 
   if (created) return <main className="auth-shell"><div className="ambient ambient-one" /><section className="auth-card glass-panel">
+    {showTrialToast && <div className="trial-toast" role="status">Your 7-day free trial is activated.</div>}
     <div className="brand-mark">✓</div><div className="eyebrow">REGISTRATION COMPLETE</div><h1>Welcome to Jazz Recovery</h1>
-    <p className="auth-subtitle">Your 7-day free trial has started. Save these device credentials now; the secret token cannot be retrieved later.</p>
+    <p className="auth-subtitle">{trialActivated ? "Your 7-day free trial has started. Save these device credentials now; the secret token cannot be retrieved later." : "Your account is registered, but this username has already claimed its free trial. Choose a subscription plan after continuing. Save these device credentials now; the secret token cannot be retrieved later."}</p>
     <label><span>Device token ID</span><input readOnly value={deviceId} /></label>
     <label><span>Device token — keep private</span><input readOnly value={deviceToken} /></label>
     <button type="button" className="primary-button full-width" onClick={() => void copyPairing()}>Copy device pairing details</button>
