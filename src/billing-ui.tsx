@@ -128,12 +128,15 @@ export function BillingPanel() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-  const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;expires_at:string|null;redeemed_count:number;max_redemptions:number|null}>>([]);
+  const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
   const [newCode, setNewCode] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [percent, setPercent] = useState("10");
+  const [startsAt, setStartsAt] = useState("");
   const [expires, setExpires] = useState("");
   const [limit, setLimit] = useState("");
+  const [perUserLimit, setPerUserLimit] = useState("1");
+  const [eligiblePlan, setEligiblePlan] = useState("annual");
   const [bootstrapSecret, setBootstrapSecret] = useState("");
   const [claimingAdmin, setClaimingAdmin] = useState(false);
 
@@ -223,22 +226,26 @@ export function BillingPanel() {
     event.preventDefault(); setMessage("");
     try {
       if (editingId !== null) {
-        await request("/api/billing/admin/discount-codes/" + editingId + "/update", {method:"POST",body:JSON.stringify({percentOff:Number(percent),expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null})});
+        await request("/api/billing/admin/discount-codes/" + editingId + "/update", {method:"POST",body:JSON.stringify({percentOff:Number(percent),startsAt:startsAt || null,expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null,perUserLimit:Number(perUserLimit),eligiblePlan})});
         setMessage("Discount updated. Existing entitlements are unchanged.");
         setEditingId(null);
       } else {
-        await request("/api/billing/admin/discount-codes", {method:"POST",body:JSON.stringify({code:newCode,label:newCode,percentOff:Number(percent),expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null})});
+        await request("/api/billing/admin/discount-codes", {method:"POST",body:JSON.stringify({code:newCode,label:newCode,percentOff:Number(percent),startsAt:startsAt || null,expiresAt:expires || null,maxRedemptions:limit ? Number(limit) : null,perUserLimit:Number(perUserLimit),eligiblePlan})});
         setMessage("Discount created. Save the exact code you entered; the server stores only its hash.");
       }
-      setNewCode(""); setExpires(""); setLimit(""); await refreshCodes();
+      setNewCode(""); setStartsAt(""); setExpires(""); setLimit(""); setPerUserLimit("1"); setEligiblePlan("annual"); await refreshCodes();
     } catch(e) { setMessage(errorMessage(e)); }
   }
-  function editCode(item: {id:string;percent_off:number;expires_at:string|null;max_redemptions:number|null}) {
+  function editCode(item: {id:string;percent_off:number;starts_at:string;expires_at:string|null;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}) {
     setEditingId(item.id);
     setPercent(String(item.percent_off));
-    const date = item.expires_at ? new Date(item.expires_at) : null;
-    setExpires(date ? new Date(date.getTime() - date.getTimezoneOffset()*60000).toISOString().slice(0,16) : "");
+    const start = item.starts_at ? new Date(item.starts_at) : null;
+    const end = item.expires_at ? new Date(item.expires_at) : null;
+    setStartsAt(start ? new Date(start.getTime() - start.getTimezoneOffset()*60000).toISOString().slice(0,16) : "");
+    setExpires(end ? new Date(end.getTime() - end.getTimezoneOffset()*60000).toISOString().slice(0,16) : "");
     setLimit(item.max_redemptions == null ? "" : String(item.max_redemptions));
+    setPerUserLimit(String(item.per_user_limit || 1));
+    setEligiblePlan(item.eligible_plan || "annual");
   }
   async function toggleCode(id:string, active:boolean) {
     try { await request("/api/billing/admin/discount-codes/"+id+(active?"/enable":"/disable"),{method:"POST",body:JSON.stringify({})}); await refreshCodes(); setMessage(active?"Code enabled.":"Code disabled for future redemptions."); }
@@ -253,10 +260,10 @@ export function BillingPanel() {
     {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or annual access has ended. Subscribe to continue with your annual plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
     <div className="billing-meta"><div><span>Current status</span><strong>{subscription?.status || "Loading…"}</strong></div><div><span>Access ends</span><strong>{endLabel}</strong></div></div>
     <div className="billing-plans" role="group" aria-label="Subscription plan">
-      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setCode("");setPreview(null);}}>Monthly · ₹49</button>
+      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setPreview(null);}}>Monthly · ₹49</button>
       <button type="button" className={plan === "annual" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("annual");setPreview(null);}}>Annual · ₹399</button>
     </div>
-    <div className="billing-actions"><input aria-label="Discount code" placeholder={plan === "annual" ? "Annual discount code (optional)" : "Discount codes apply to annual only"} value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40} disabled={plan === "monthly"}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy || plan === "monthly"}>Apply code</button></div>
+    <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40} disabled={plan === "monthly"}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
@@ -274,12 +281,15 @@ export function BillingPanel() {
           ? <label><span>New code</span><input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase())} pattern="[A-Z0-9][A-Z0-9-]{3,39}" required /></label>
           : <div><span>Editing code ••••{codes.find(item=>item.id===editingId)?.label}</span><p>The original code is hashed and cannot be displayed or renamed. To rotate it, create a replacement code and disable the old one.</p></div>}
         <label><span>Discount</span><select value={percent} onChange={e=>setPercent(e.target.value)}><option value="10">10%</option><option value="20">20%</option><option value="50">50%</option><option value="100">100% family/friends</option></select></label>
-        <label><span>Expiry (optional)</span><input type="datetime-local" value={expires} onChange={e=>setExpires(e.target.value)} /></label>
-        <label><span>Max redemptions (optional)</span><input type="number" min="1" max="1000000" value={limit} onChange={e=>setLimit(e.target.value)} /></label>
+        <label><span>Starts at (optional)</span><input type="datetime-local" value={startsAt} onChange={e=>setStartsAt(e.target.value)} /></label>
+        <label><span>Fixed expiry (optional)</span><input type="datetime-local" value={expires} onChange={e=>setExpires(e.target.value)} /></label>
+        <label><span>Eligible plan</span><select value={eligiblePlan} onChange={e=>setEligiblePlan(e.target.value)}><option value="annual">Annual only</option><option value="monthly">Monthly only</option><option value="both">Monthly and annual</option></select></label>
+        <label><span>Max redemptions overall (optional)</span><input type="number" min="1" max="1000000" value={limit} onChange={e=>setLimit(e.target.value)} /></label>
+        <label><span>Max uses per user</span><input type="number" min="1" max="1000000" value={perUserLimit} onChange={e=>setPerUserLimit(e.target.value)} required /></label>
         <button className="primary-button" type="submit">{editingId === null ? "Create discount code" : "Save discount changes"}</button>
         {editingId !== null && <button className="secondary-button" type="button" onClick={()=>{setEditingId(null);setExpires("");setLimit("");}}>Cancel edit</button>}
       </form>
-      <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>{item.label} · {item.percent_off}% · {item.redeemed_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
+      <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>{item.label} · {item.percent_off}% · {item.eligible_plan} · {item.redeemed_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.per_user_limit}/user · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
     </div>}
   </section>;
 }
