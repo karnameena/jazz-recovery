@@ -6,9 +6,13 @@ export type LocationState = {
 };
 
 export type PhotoState = {
-  dataUrl: string;
+  dataUrl?: string;
   camera?: string | null;
   timestamp?: number | string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  available?: boolean;
+  legacy?: boolean;
 };
 
 export type Device = {
