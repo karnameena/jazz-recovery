@@ -69,3 +69,44 @@ export async function api(path: string, options: RequestInit = {}) {
     throw new Error(data.error || `Request failed (${response.status})`);
   return data;
 }
+
+export async function apiBlob(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "image/jpeg,image/png,application/json" },
+    });
+  } catch {
+    throw new Error(
+      API_BASE_URL
+        ? "Could not reach the Jazz Lost Mode server while loading the recovery photo."
+        : "Could not reach the Jazz Lost Mode API. Check the website API proxy or VITE_API_BASE_URL.",
+    );
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(
+      typeof data.error === "string"
+        ? data.error
+        : `Could not load the current recovery photo (${response.status}).`,
+    );
+  }
+
+  const contentType = String(response.headers.get("content-type") || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "image/jpeg" && contentType !== "image/png") {
+    throw new Error("The server did not return a valid JPEG or PNG recovery photo.");
+  }
+
+  const blob = await response.blob();
+  if (!blob.size || blob.size > 5 * 1024 * 1024) {
+    throw new Error("The current recovery photo is empty or exceeds the 5 MB limit.");
+  }
+  return blob;
+}
