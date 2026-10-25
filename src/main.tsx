@@ -775,16 +775,16 @@ function App() {
           <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
             <LockKeyhole size={17} /> Set recovery PIN
           </button>
-          <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>
+          {billingAccess !== "expired" && <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>
             <ShieldCheck size={17} /> {billingOpen ? "Hide subscription" : "Subscription"}
-          </button>
+          </button>}
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
           </button>
         </div>
       </header>
 
-      {billingOpen && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
+      {billingOpen && billingAccess !== "expired" && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
