@@ -356,6 +356,7 @@ function App() {
   const [activeCount, setActiveCount] = useState(0);
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingAccess, setBillingAccess] = useState<"loading" | "trial" | "subscribed" | "expired" | "error">("loading");
+  const [isBillingAdmin, setIsBillingAdmin] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<{ deviceId: number; url: string } | null>(null);
   const [photoLoadError, setPhotoLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -416,6 +417,7 @@ function App() {
     setBillingAccess("loading");
     api("/api/billing/status").then((status) => {
       if (cancelled) return;
+      setIsBillingAdmin(status.isBillingAdmin === true);
       if (status.access === "trial" || status.access === "subscribed" || status.access === "expired") {
         setBillingAccess(status.access);
       } else {
@@ -783,6 +785,7 @@ function App() {
           <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
             <LockKeyhole size={17} /> Set recovery PIN
           </button>
+          {isBillingAdmin && <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>{billingOpen ? "Hide owner controls" : "Owner admin"}</button>}
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
           </button>
