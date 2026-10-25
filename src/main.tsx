@@ -353,6 +353,9 @@ function App() {
   const [msg, setMsg] = useState("");
   const [activeCount, setActiveCount] = useState(0);
   const [billingOpen, setBillingOpen] = useState(false);
+  const [billingAccess, setBillingAccess] = useState<"loading" | "trial" | "subscribed" | "expired" | "error">("loading");
+  const [photoUrl, setPhotoUrl] = useState<{ deviceId: number; url: string } | null>(null);
+  const [photoLoadError, setPhotoLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [imeiVisible, setImeiVisible] = useState(false);
   const [imeiCopyMessage, setImeiCopyMessage] = useState("");
@@ -402,18 +405,25 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (login) void load();
-  }, [login]);
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed")) void load().catch(() => {});
+  }, [login, billingAccess]);
 
   useEffect(() => {
-    if (!login) return;
+    if (!login) { setBillingAccess("loading"); return; }
     let cancelled = false;
+    setBillingAccess("loading");
     api("/api/billing/status").then((status) => {
-      if (!cancelled && status.access === "expired") {
-        setBillingOpen(true);
-        setToast("Your access has expired. Choose a subscription plan to continue.");
+      if (cancelled) return;
+      if (status.access === "trial" || status.access === "subscribed" || status.access === "expired") {
+        setBillingAccess(status.access);
+      } else {
+        setBillingAccess("error");
       }
-    }).catch(() => {});
+      if (status.access === "expired") {
+        setBillingOpen(false);
+        setToast("Your 7-day trial or subscription has expired. Choose a plan to continue.");
+      }
+    }).catch(() => { if (!cancelled) setBillingAccess("error"); });
     return () => { cancelled = true; };
   }, [login]);
 
@@ -423,16 +433,20 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
-    if (login && selected) void refresh(selected);
-  }, [login, selected]);
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed") && selected) void refresh(selected).catch(() => {});
+  }, [login, billingAccess, selected]);
   useEffect(() => {
-    if (!login || !selected) return;
+    if (!login || (billingAccess !== "trial" && billingAccess !== "subscribed") || !selected) return;
     const timer = window.setInterval(() => {
       void refresh(selected).catch(() => {});
       void load().catch(() => {});
-    }, 2000);
+      void api("/api/billing/status").then(status => {
+        if (status.access === "expired") setBillingAccess("expired");
+        else if (status.access === "trial" || status.access === "subscribed") setBillingAccess(status.access);
+      }).catch(() => {});
+    }, 10000);
     return () => window.clearInterval(timer);
-  }, [login, selected]);
+  }, [login, billingAccess, selected]);
 
   function isActionBusy(name: string, args: Record<string, unknown> = {}) {
     return actionLocks.current.has(actionKey(name, args));
@@ -582,13 +596,14 @@ function App() {
   }
 
   async function logout() {
-    setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
     await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
       () => {},
     );
     setLogin(false);
+    setBillingAccess("loading");
+    setBillingOpen(false);
     setDevices([]);
     setDevice(null);
   }
@@ -658,10 +673,47 @@ function App() {
     setMsg("Recovery report downloaded.");
   }
 
+  useEffect(() => {
+    const current = device;
+    if (!current?.photo) {
+      setPhotoLoadError("");
+      setPhotoUrl((previous) => {
+        if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
+        return null;
+      });
+      return;
+    }
+    if (current.photo.dataUrl) {
+      setPhotoLoadError("");
+      setPhotoUrl((previous) => {
+        if (previous?.url.startsWith("blob:") && previous.url !== current.photo?.dataUrl) URL.revokeObjectURL(previous.url);
+        return { deviceId: current.id, url: current.photo.dataUrl };
+      });
+      return;
+    }
+    let cancelled = false;
+    setPhotoLoadError("");
+    fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, { credentials: "include", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Photo request failed (${response.status})`);
+        const blob = await response.blob();
+        if (!blob.type.startsWith("image/")) throw new Error("The saved photo response was not an image.");
+        const url = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        setPhotoUrl((previous) => {
+          if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
+          return { deviceId: current.id, url };
+        });
+      })
+      .catch(() => { if (!cancelled) setPhotoLoadError("The saved recovery photo could not be loaded. The server has retained the stored image."); });
+    return () => { cancelled = true; };
+  }, [device?.id, device?.photo?.timestamp, device?.photo?.camera, device?.photo?.dataUrl]);
+
   const onlineCount = useMemo(
     () => devices.filter((item) => item.online).length,
     [devices],
   );
+  const currentPhotoSrc = device?.photo?.dataUrl || (device && photoUrl?.deviceId === device.id ? photoUrl.url : "");
 
   if (!ready)
     return (
@@ -674,6 +726,9 @@ function App() {
     if (registration?.trialActivated) setToast("Your 7-day free trial is now active.");
     else if (registration) setToast("Your Jazz Recovery account was created successfully.");
   }} />;
+  if (billingAccess === "loading") return <div className="loading-screen"><RefreshCw className="spin" /> Verifying subscription access…</div>;
+  if (billingAccess === "error") return <main className="auth-shell"><section className="auth-card glass-panel"><div className="eyebrow">JAZZ SECURE RECOVERY</div><h1>Could not verify account access</h1><p className="auth-subtitle">The server did not return your current trial or subscription status. The dashboard is hidden until access can be verified. Check the backend and try again.</p><button className="primary-button full-width" onClick={() => window.location.reload()}>Retry access check</button><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
+  if (billingAccess === "expired") return <main className="auth-shell"><section className="auth-card glass-panel subscription-gate"><div className="brand-logo"><img src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png" alt="Jazz Logo" width={95} height={95} /></div><div className="eyebrow">JAZZ RECOVERY ACCESS</div><h1>Choose a subscription plan</h1><p className="auth-subtitle">Your free trial or previous subscription has ended. Subscribe to restore dashboard access. Your registered devices and saved recovery evidence remain stored.</p><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
 
   return (
     <div className="app-shell">
@@ -727,7 +782,7 @@ function App() {
         </div>
       </header>
 
-      {billingOpen && <div className="billing-panel-wrap"><BillingPanel /></div>}
+      {billingOpen && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
@@ -1136,8 +1191,9 @@ function App() {
                   {device.photo ? (
                     <>
                       <div className="photo-frame">
-                        <img src={device.photo.dataUrl} alt="Latest recovery" />
+                        {currentPhotoSrc ? <img src={currentPhotoSrc} alt="Latest recovery" /> : <p role="status">Loading saved recovery photo…</p>}
                       </div>
+                      {photoLoadError && <p className="error-banner" role="status">{photoLoadError}</p>}
                       <div className="photo-meta">
                         <span>{device.photo.camera || "camera"} camera</span>
                         <span>{formatTime(device.photo.timestamp)}</span>
@@ -1145,7 +1201,7 @@ function App() {
                       <div className="card-actions">
                         <a
                           className="primary-button"
-                          href={device.photo.dataUrl}
+                          href={currentPhotoSrc || undefined}
                           download={`jazz-recovery-${device.photo.camera || "photo"}.jpg`}
                         >
                           <Download size={17} /> Download Recovery Photo
