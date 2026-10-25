@@ -38,6 +38,31 @@ if ($serverBranch -ne $ExpectedServerBranch) {
     throw "Backend branch mismatch ('$serverBranch'). Expected '$ExpectedServerBranch'. Existing files were not changed."
 }
 
+# Refresh the isolated backend checkout without touching its private .env.
+# Refuse to overwrite any tracked local edits; untracked .env is intentionally preserved.
+$trackedChanges = git -C $ServerPath diff --quiet
+if ($LASTEXITCODE -ne 0) {
+    throw "Backend source files have local edits. Nothing was overwritten; review them before updating the isolated backend checkout."
+}
+git -C $ServerPath diff --cached --quiet
+if ($LASTEXITCODE -ne 0) {
+    throw "Backend source files have staged edits. Nothing was overwritten; review them before updating the isolated backend checkout."
+}
+git -C $ServerPath fetch origin $ExpectedServerBranch
+if ($LASTEXITCODE -ne 0) { throw "Could not check for backend updates. Existing files were left unchanged." }
+git -C $ServerPath merge-base --is-ancestor HEAD "origin/$ExpectedServerBranch"
+if ($LASTEXITCODE -eq 0) {
+    # Local HEAD is already equal to or behind origin; fast-forward only.
+    git -C $ServerPath merge --ff-only "origin/$ExpectedServerBranch"
+    if ($LASTEXITCODE -ne 0) { throw "Could not safely fast-forward the backend checkout." }
+} else {
+    git -C $ServerPath merge-base --is-ancestor "origin/$ExpectedServerBranch" HEAD
+    if ($LASTEXITCODE -ne 0) {
+        throw "Backend checkout and remote branch have diverged. Nothing was reset or overwritten; inspect the checkout manually."
+    }
+    Write-Host "Backend checkout is ahead of GitHub; leaving its local commits untouched."
+}
+
 $envFile = Join-Path $ServerPath ".env"
 if (-not (Test-Path $envFile)) {
     Copy-Item (Join-Path $ServerPath ".env.local.example") $envFile
