@@ -154,6 +154,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [editTrialStart, setEditTrialStart] = useState("");
   const [editTrialEnd, setEditTrialEnd] = useState("");
   const [editSubscriptionStart, setEditSubscriptionStart] = useState("");
+  const [editSubscriptionEnd, setEditSubscriptionEnd] = useState("");
   const [editSubscriptionMonths, setEditSubscriptionMonths] = useState("1");
   const [savingUserDates, setSavingUserDates] = useState(false);
 
@@ -223,6 +224,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     setEditTrialStart(toLocalDateTime(item.trial_started_at));
     setEditTrialEnd(toLocalDateTime(item.trial_ends_at));
     setEditSubscriptionStart(toLocalDateTime(item.subscription_started_at));
+    setEditSubscriptionEnd("");
     setEditSubscriptionMonths(String(item.subscription_duration_months || 1));
   }
   async function saveUserDates(event: React.FormEvent<HTMLFormElement>) {
@@ -237,7 +239,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
           username: editingUser,
           trialStartAt: new Date(editTrialStart).toISOString(),
           trialEndAt: new Date(editTrialEnd).toISOString(),
-          ...(editSubscriptionStart ? { subscriptionStartAt: new Date(editSubscriptionStart).toISOString(), subscriptionDurationMonths: Number(editSubscriptionMonths) } : {})
+          ...(editSubscriptionStart ? { subscriptionStartAt: new Date(editSubscriptionStart).toISOString(), subscriptionDurationMonths: Number(editSubscriptionMonths), ...(editSubscriptionEnd ? { subscriptionEndAt: new Date(editSubscriptionEnd).toISOString() } : {}) } : {})
         })
       });
       setMessage("Trial and subscription dates saved to PostgreSQL.");
@@ -435,6 +437,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
             <label><span>Trial start</span><input type="datetime-local" value={editTrialStart} onChange={e=>setEditTrialStart(e.target.value)} required /></label>
             <label><span>Trial end</span><input type="datetime-local" value={editTrialEnd} onChange={e=>setEditTrialEnd(e.target.value)} required /></label>
             <label><span>Subscription start (blank leaves subscription unchanged)</span><input type="datetime-local" value={editSubscriptionStart} onChange={e=>setEditSubscriptionStart(e.target.value)} /></label>
+            {editSubscriptionStart && <label><span>Subscription end date (optional; overrides duration)</span><input type="datetime-local" value={editSubscriptionEnd} onChange={e=>setEditSubscriptionEnd(e.target.value)} /></label>}
             {editSubscriptionStart && <label><span>Subscription duration (months, 1–120)</span><input type="number" min="1" max="120" step="1" value={editSubscriptionMonths} onChange={e=>setEditSubscriptionMonths(e.target.value)} required /></label>}
             <div className="ledger-edit-actions"><button type="submit" className="primary-button" disabled={savingUserDates}>{savingUserDates ? "Saving…" : "Save dates"}</button><button type="button" className="secondary-button" onClick={()=>setEditingUser(null)} disabled={savingUserDates}>Cancel</button></div>
           </form>}
