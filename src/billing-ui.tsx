@@ -119,7 +119,7 @@ declare global {
   interface Window { Razorpay?: new (options: Record<string, unknown>) => { open: () => void }; }
 }
 type SubscriptionState = { status: string; access: boolean; trialEndsAt: string | null; paidEndsAt: string | null; planType: string | null };
-export function BillingPanel() {
+export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "trial" | "subscribed" | "expired") => void }) {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
   const [code, setCode] = useState("");
