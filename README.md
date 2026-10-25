@@ -108,3 +108,15 @@ Deploys automatically when this repository's `render-web` branch updates, if you
 ## Source integration and rollback
 
 The existing web source was already identical to the latest monorepo web source at the time of setup, modulo newline encoding. This deployment branch only adds Render configuration, documentation, CI and ignore rules. Existing website behavior and recovered phone workflows are unchanged. The prior `main` branch and the main Jazz project are untouched. This Neon staging documentation update is isolated on its own feature branch and does not alter the existing website behavior.
+
+
+## Local development (website + PostgreSQL API)
+
+The local one-command launcher is available on branch `feature/local-one-command-startup-20261025`; its paired API branch is `feature/local-env-startup-20261025` in [jazz-recovery-server](https://github.com/karnameena/jazz-recovery-server).
+
+1. Keep the website checkout and the `jazz-recovery-server` checkout in sibling folders.
+2. In each checkout, switch to the matching branch above and pull it.
+3. Run `scripts/start-local.ps1` from the website checkout. On first run it creates the API's `.env` from `.env.local.example` and stops so you can configure it. On later runs it starts the API in a separate PowerShell window and the website at `http://localhost:5190`.
+4. The API requires Node.js 22.5+ and `JAZZ_DB_ENGINE=postgres` with `DATABASE_URL` set. Never use the live production database for local development or tests; use an isolated Neon branch/database and keep credentials private.
+
+The launcher intentionally refuses to run if either checkout is on the wrong branch. It does not switch branches, reset files, run tests against Neon, or modify/delete existing project data.
