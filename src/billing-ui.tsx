@@ -135,7 +135,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [preview, setPreview] = useState<{percentOff:number;amountPaise:number}|null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
+  const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
   const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_duration_months:number|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
   const [newCode, setNewCode] = useState("");
@@ -192,7 +192,6 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
       setIsOwner(true);
     } catch (e) {
       setMessage(errorMessage(e));
-      setIsOwner(false);
     }
   }
   function toLocalDateTime(value: string | null) {
@@ -277,7 +276,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     anchor.remove();
     URL.revokeObjectURL(url);
   }
-  useEffect(() => { void refresh().catch(e => setMessage(errorMessage(e))); }, []);
+  useEffect(() => { void refresh().catch(e => { setMessage(errorMessage(e)); setIsOwner(false); }); }, []);
   async function applyCode() {
     setMessage(""); setPreview(null);
     if (!code.trim()) { setMessage("Enter a discount code first."); return; }
@@ -361,7 +360,9 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const end = subscription?.status === "trialing" ? subscription.trialEndsAt : subscription?.paidEndsAt;
   const endLabel = end ? new Date(end).toLocaleString() : "Not available";
   const selectedPricePaise = preview ? preview.amountPaise : plans[plan];
+  if (isOwner === null) return <section className="glass-panel billing-panel" aria-busy="true"><p>Verifying account permissions…</p></section>;
   return <section className="glass-panel billing-panel">
+    {!isOwner && <>
     <div className="card-heading"><div><span className="eyebrow">ACCOUNT PLAN</span><h2>Trial & subscription</h2></div><span className="count-badge">{subscription?.status || "loading"}</span></div>
     <p>Your configured trial period is followed by an optional subscription. Choose the monthly or annual plan that fits you. Payments are processed securely by Razorpay; no automatic renewal is enabled.</p>
     {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or subscription access has ended. Subscribe to continue with your selected plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
@@ -373,6 +374,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
+    </>}
     {message && <p className="billing-message" role="status">{message}</p>}
     {isOwner && <div className="discount-admin"><div className="eyebrow">OWNER CONTROLS</div><h3>Discount code management</h3>
       <form onSubmit={createCode} className="discount-form">
