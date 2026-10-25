@@ -408,8 +408,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (login && (billingAccess === "trial" || billingAccess === "subscribed")) void load().catch(() => {});
-  }, [login, billingAccess]);
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed" || isBillingAdmin)) void load().catch(() => {});
+  }, [login, billingAccess, isBillingAdmin]);
 
   useEffect(() => {
     if (!login) { setBillingAccess("loading"); return; }
@@ -423,7 +423,7 @@ function App() {
       } else {
         setBillingAccess("error");
       }
-      if (status.access === "expired") {
+      if (status.access === "expired" && status.isBillingAdmin !== true) {
         setBillingOpen(false);
         setToast("Your 7-day trial or subscription has expired. Choose a plan to continue.");
       }
@@ -437,10 +437,10 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
-    if (login && (billingAccess === "trial" || billingAccess === "subscribed") && selected) void refresh(selected).catch(() => {});
-  }, [login, billingAccess, selected]);
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed" || isBillingAdmin) && selected) void refresh(selected).catch(() => {});
+  }, [login, billingAccess, selected, isBillingAdmin]);
   useEffect(() => {
-    if (!login || (billingAccess !== "trial" && billingAccess !== "subscribed")) return;
+    if (!login || ((billingAccess !== "trial" && billingAccess !== "subscribed") && !isBillingAdmin)) return;
     const timer = window.setInterval(() => {
       if (selected) {
         void refresh(selected).catch(() => {});
@@ -450,7 +450,7 @@ function App() {
       // still closes on time even when an account has no currently selected device.
       void api("/api/billing/status").then(status => {
         if (status.access === "expired") {
-          setBillingOpen(false);
+          if (status.isBillingAdmin !== true) setBillingOpen(false);
           setBillingAccess("expired");
         } else if (status.access === "trial" || status.access === "subscribed") {
           setBillingAccess(status.access);
@@ -458,7 +458,7 @@ function App() {
       }).catch(() => {});
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [login, billingAccess, selected]);
+  }, [login, billingAccess, selected, isBillingAdmin]);
 
   function isActionBusy(name: string, args: Record<string, unknown> = {}) {
     return actionLocks.current.has(actionKey(name, args));
@@ -740,7 +740,7 @@ function App() {
   }} />;
   if (billingAccess === "loading") return <div className="loading-screen"><RefreshCw className="spin" /> Verifying subscription access…</div>;
   if (billingAccess === "error") return <main className="auth-shell"><section className="auth-card glass-panel"><div className="eyebrow">JAZZ SECURE RECOVERY</div><h1>Could not verify account access</h1><p className="auth-subtitle">The server did not return your current trial or subscription status. The dashboard is hidden until access can be verified. Check the backend and try again.</p><button className="primary-button full-width" onClick={() => window.location.reload()}>Retry access check</button><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
-  if (billingAccess === "expired") return <main className="auth-shell"><section className="auth-card glass-panel subscription-gate"><div className="brand-logo"><img src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png" alt="Jazz Logo" width={95} height={95} /></div><div className="eyebrow">JAZZ RECOVERY ACCESS</div><h1>Choose a subscription plan</h1><p className="auth-subtitle">Your free trial or previous subscription has ended. Subscribe to restore dashboard access. Your registered devices and saved recovery evidence remain stored.</p><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
+  if (billingAccess === "expired" && !isBillingAdmin) return <main className="auth-shell"><section className="auth-card glass-panel subscription-gate"><div className="brand-logo"><img src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png" alt="Jazz Logo" width={95} height={95} /></div><div className="eyebrow">JAZZ RECOVERY ACCESS</div><h1>Choose a subscription plan</h1><p className="auth-subtitle">Your free trial or previous subscription has ended. Subscribe to restore dashboard access. Your registered devices and saved recovery evidence remain stored.</p><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
 
   return (
     <div className="app-shell">
@@ -792,7 +792,7 @@ function App() {
         </div>
       </header>
 
-      {billingOpen && billingAccess !== "expired" && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
+      {billingOpen && (billingAccess !== "expired" || isBillingAdmin) && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
