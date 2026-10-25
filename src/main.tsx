@@ -423,9 +423,14 @@ function App() {
       } else {
         setBillingAccess("error");
       }
-      if (status.access === "expired" && status.isBillingAdmin !== true) {
-        setBillingOpen(false);
-        setToast("Your 7-day trial or subscription has expired. Choose a plan to continue.");
+      if (status.access === "expired") {
+        if (status.isBillingAdmin === true) {
+          // The owner bypasses the subscription paywall and lands on owner controls.
+          setBillingOpen(true);
+        } else {
+          setBillingOpen(false);
+          setToast("Your 7-day trial or subscription has expired. Choose a plan to continue.");
+        }
       }
     }).catch(() => { if (!cancelled) setBillingAccess("error"); });
     return () => { cancelled = true; };
