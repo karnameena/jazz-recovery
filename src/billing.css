@@ -41,3 +41,25 @@
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+
+
+/* Responsive owner ledger for hundreds or thousands of accounts */
+.ledger-toolbar { display:flex; align-items:center; gap:12px; margin-top:14px; }
+.ledger-toolbar input { flex:1 1 240px; min-width:0; color:var(--text); background:rgba(4,9,23,.72); border:1px solid var(--line); border-radius:12px; padding:12px 13px; }
+.ledger-toolbar span { color:var(--muted); white-space:nowrap; font-size:.88rem; }
+.user-ledger-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; }
+.user-ledger-row > span { overflow-wrap:anywhere; line-height:1.65; }
+.ledger-edit-form { grid-column:1/-1; width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:14px; border:1px solid var(--line); border-radius:14px; background:rgba(4,9,23,.32); }
+.ledger-edit-form > strong { grid-column:1/-1; }
+.ledger-edit-form label { min-width:0; display:flex; flex-direction:column; gap:6px; color:var(--muted); font-size:.85rem; }
+.ledger-edit-form input { width:100%; min-width:0; color:var(--text); background:rgba(4,9,23,.72); border:1px solid var(--line); border-radius:12px; padding:11px; }
+.ledger-edit-actions { grid-column:1/-1; display:flex; gap:10px; flex-wrap:wrap; }
+.ledger-pagination { display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; padding:12px; }
+.ledger-pagination span { color:var(--muted); font-size:.88rem; }
+@media(max-width:600px) {
+  .ledger-toolbar { align-items:stretch; flex-direction:column; }
+  .user-ledger-row { grid-template-columns:minmax(0,1fr); }
+  .user-ledger-row > button { justify-self:start; }
+  .ledger-edit-form { grid-template-columns:minmax(0,1fr); padding:10px; }
+  .ledger-edit-form > strong,.ledger-edit-actions { grid-column:auto; }
+}
