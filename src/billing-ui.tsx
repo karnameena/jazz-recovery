@@ -136,7 +136,6 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-  const [billingAdminConfigured, setBillingAdminConfigured] = useState(false);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
   const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_duration_months:number|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
   const [newCode, setNewCode] = useState("");
