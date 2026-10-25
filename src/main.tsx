@@ -438,13 +438,21 @@ function App() {
     if (login && (billingAccess === "trial" || billingAccess === "subscribed") && selected) void refresh(selected).catch(() => {});
   }, [login, billingAccess, selected]);
   useEffect(() => {
-    if (!login || (billingAccess !== "trial" && billingAccess !== "subscribed") || !selected) return;
+    if (!login || (billingAccess !== "trial" && billingAccess !== "subscribed")) return;
     const timer = window.setInterval(() => {
-      void refresh(selected).catch(() => {});
-      void load().catch(() => {});
+      if (selected) {
+        void refresh(selected).catch(() => {});
+        void load().catch(() => {});
+      }
+      // Billing expiry is checked independently of device selection, so access
+      // still closes on time even when an account has no currently selected device.
       void api("/api/billing/status").then(status => {
-        if (status.access === "expired") setBillingAccess("expired");
-        else if (status.access === "trial" || status.access === "subscribed") setBillingAccess(status.access);
+        if (status.access === "expired") {
+          setBillingOpen(false);
+          setBillingAccess("expired");
+        } else if (status.access === "trial" || status.access === "subscribed") {
+          setBillingAccess(status.access);
+        }
       }).catch(() => {});
     }, 10000);
     return () => window.clearInterval(timer);
