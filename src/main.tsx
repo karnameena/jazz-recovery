@@ -513,6 +513,32 @@ function App() {
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
 
+        // The server exposes the command's real completion result. This avoids
+        // leaving the user waiting through every poll when camera capture or
+        // private-storage upload has already failed.
+        if (isPhotoRequest && data.commandId) {
+          const commandStatus = await api(
+            `/api/devices/${selectedAtStart}/commands/${data.commandId}`,
+          ).catch(() => null);
+          if (commandStatus?.status === "FAILED" || commandStatus?.status === "EXPIRED") {
+            const reason = String(commandStatus?.result?.error || "");
+            setMsg(reason
+              ? `Photo request failed: ${reason}. The previous saved photo was not replaced.`
+              : "Photo request failed before a new photo was saved. The previous saved photo was not replaced.");
+            completed = true;
+            break;
+          }
+          if (commandStatus?.status === "COMPLETED") {
+            const wanted = args.camera === "rear" ? "rear" : "front";
+            const now = `${latest.photo?.camera ?? ""}:${String(latest.photo?.timestamp ?? "")}`;
+            if (latest.photo?.camera === wanted && now !== beforePhoto) {
+              setMsg(`${wanted === "rear" ? "Back" : "Front"} camera photo saved. Updating preview…`);
+              completed = true;
+              break;
+            }
+          }
+        }
+
         if (name === "GET_LOCATION") {
           const now = String(latest.location?.timestamp ?? "");
           if (now && now !== beforeLocation) {
