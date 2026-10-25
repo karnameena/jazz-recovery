@@ -160,6 +160,10 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
 
   async function refresh() {
     const result = await request("/api/billing/status");
+    if (result.access === "trial" || result.access === "subscribed" || result.access === "expired") onAccessChange?.(result.access);
+    setIsOwner(result.isBillingAdmin === true);
+    if (result.isBillingAdmin === true) await refreshCodes();
+    else setCodes([]);
     setPlans({ monthly: Number(result.plans?.monthly || 4900), annual: Number(result.plans?.annual || result.pricePaise || 39900) });
     if (result.subscription?.active) {
       setSubscription({ status: result.subscription.status, access: true, trialEndsAt: null, paidEndsAt: result.subscription.expires_at, planType: result.subscription.plan_type || "annual" });
