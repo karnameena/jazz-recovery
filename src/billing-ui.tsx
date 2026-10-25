@@ -10,7 +10,10 @@ function apiBaseUrl() {
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("Invalid API URL configuration.");
   return parsed.origin + parsed.pathname.replace(/\/+$/, "");
 }
-const API = apiBaseUrl();
+// In local Vite development, use the same-origin /api proxy so the launcher can
+// route requests to the exact backend PORT configured in the private server .env.
+// Hosted builds keep using the explicitly configured VITE_API_BASE_URL.
+const API = import.meta.env.DEV ? "" : apiBaseUrl();
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("Accept", "application/json");
