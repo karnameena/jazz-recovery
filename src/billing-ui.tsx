@@ -149,7 +149,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     try {
       await request("/api/billing/admin/claim", { method: "POST", body: JSON.stringify({ bootstrapSecret }) });
       setBootstrapSecret("");
-      await refreshCodes();
+      await refresh();
       setMessage("Owner billing controls enabled. Remove the one-time bootstrap secret from the server environment now.");
     } catch (e) {
       setMessage(errorMessage(e));
