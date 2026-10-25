@@ -45,6 +45,21 @@ if (-not (Test-Path $envFile)) {
     exit 0
 }
 
+# Read only the non-secret PORT setting so the Vite proxy targets this exact API,
+# rather than accidentally sending requests to an older API on the default port.
+$apiPort = 8890
+$portLine = Get-Content $envFile | Where-Object { $_ -match '^\s*PORT\s*=' } | Select-Object -Last 1
+if ($portLine) {
+    $portValue = ($portLine -replace '^\s*PORT\s*=\s*', '').Trim().Trim('"').Trim("'")
+    $parsedPort = 0
+    if (-not [int]::TryParse($portValue, [ref]$parsedPort) -or $parsedPort -lt 1 -or $parsedPort -gt 65535) {
+        throw "Invalid PORT in backend .env. Use a number from 1 to 65535."
+    }
+    $apiPort = $parsedPort
+}
+$env:LOST_MODE_API_URL = "http://127.0.0.1:$apiPort"
+Write-Host "Website API proxy will target the configured local backend port $apiPort."
+
 foreach ($path in @($ServerPath, $WebPath)) {
     if (-not (Test-Path (Join-Path $path "node_modules"))) {
         Write-Host "Installing dependencies in $path ..."
