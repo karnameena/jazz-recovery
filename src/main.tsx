@@ -499,37 +499,52 @@ function App() {
           : "Recovery request sent. Waiting for the device…",
       );
 
+      const isPhotoRequest = name === "RECOVERY_PHOTO";
       const maxAttempts =
-        name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
+        name === "GET_LOCATION" || isPhotoRequest ? 30 : 10;
+      let completed = false;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 650));
+        // Fast initial checks make completed captures appear quickly; a small
+        // backoff then avoids hammering PostgreSQL while Android is capturing.
+        const delayMs = isPhotoRequest
+          ? Math.min(1000, 350 + attempts * 75)
+          : name === "GET_LOCATION" ? 650 : 650;
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
-        if (attempts % 3 === 0) void load().catch(() => {});
 
         if (name === "GET_LOCATION") {
           const now = String(latest.location?.timestamp ?? "");
           if (now && now !== beforeLocation) {
             setMsg("Latest location received and map updated.");
+            completed = true;
             break;
           }
-        } else if (name === "RECOVERY_PHOTO") {
+        } else if (isPhotoRequest) {
           const wanted = args.camera === "rear" ? "rear" : "front";
           const now = `${latest.photo?.camera ?? ""}:${String(latest.photo?.timestamp ?? "")}`;
           if (latest.photo?.camera === wanted && now !== beforePhoto) {
             setMsg(
-              `${wanted === "rear" ? "Back" : "Front"} camera recovery photo updated.`,
+              `${wanted === "rear" ? "Back" : "Front"} camera photo saved. Updating preview…`,
             );
+            // Force the current-photo read after the server confirms a newer
+            // photo record, rather than waiting for the next periodic refresh.
+            await refresh(selectedAtStart).catch(() => null);
+            completed = true;
             break;
           }
         } else if (name === "SET_RECOVERY_MODE" && latest.mode !== beforeMode) {
           setMsg("Lost Mode state updated.");
+          completed = true;
           break;
-        } else if (attempts === maxAttempts - 1) {
-          setMsg(
-            "Recovery request sent. The page will continue refreshing automatically.",
-          );
         }
+      }
+      if (!completed) {
+        setMsg(isPhotoRequest
+          ? "No new photo was confirmed within the wait window. Check that the phone is online and Jazz Recovery has camera permission, then retry. The previous saved photo has not been replaced."
+          : name === "GET_LOCATION"
+            ? "No new location was confirmed yet. The page will keep showing the latest saved location."
+            : "Recovery request is still pending. Check the phone connection and try again."); 
       }
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "Action failed");
