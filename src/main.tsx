@@ -86,7 +86,9 @@ function apiBaseUrl() {
   }
 }
 
-const API_BASE_URL = apiBaseUrl();
+// Local Vite development must use the same-origin /api proxy, just like billing-ui.tsx.
+// Hosted builds continue to use VITE_API_BASE_URL.
+const API_BASE_URL = import.meta.env.DEV ? "" : apiBaseUrl();
 
 async function api(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
