@@ -127,13 +127,17 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
   const [code, setCode] = useState("");
   const [plans, setPlans] = useState({ monthly: 4900, annual: 39900 });
+  const [planDetails, setPlanDetails] = useState({
+    monthly: { label: "Monthly", periodLabel: "1 month", durationMonths: 1 },
+    annual: { label: "Annual", periodLabel: "12 months", durationMonths: 12 }
+  });
   const [plan, setPlan] = useState<"monthly" | "annual">("annual");
   const [preview, setPreview] = useState<{percentOff:number;amountPaise:number}|null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
-  const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
+  const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_duration_months:number|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
   const [newCode, setNewCode] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [percent, setPercent] = useState("10");
@@ -169,6 +173,18 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     if (result.isBillingAdmin === true) await refreshCodes();
     else setCodes([]);
     setPlans({ monthly: Number(result.plans?.monthly || 4900), annual: Number(result.plans?.annual || result.pricePaise || 39900) });
+    setPlanDetails({
+      monthly: {
+        label: String(result.planDetails?.monthly?.label || "Monthly"),
+        periodLabel: String(result.planDetails?.monthly?.periodLabel || "1 month"),
+        durationMonths: Number(result.planDetails?.monthly?.durationMonths || 1)
+      },
+      annual: {
+        label: String(result.planDetails?.annual?.label || "Annual"),
+        periodLabel: String(result.planDetails?.annual?.periodLabel || "12 months"),
+        durationMonths: Number(result.planDetails?.annual?.durationMonths || 12)
+      }
+    });
     if (result.subscription?.active) {
       setSubscription({ status: result.subscription.status, access: true, trialEndsAt: null, paidEndsAt: result.subscription.expires_at, planType: result.subscription.plan_type || "annual" });
     } else if (result.trial?.active) {
@@ -278,12 +294,12 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const selectedPricePaise = preview ? preview.amountPaise : plans[plan];
   return <section className="glass-panel billing-panel">
     <div className="card-heading"><div><span className="eyebrow">ACCOUNT PLAN</span><h2>Trial & subscription</h2></div><span className="count-badge">{subscription?.status || "loading"}</span></div>
-    <p>Your 7-day free trial is followed by an optional subscription. Choose monthly or annual billing. Payments are processed securely by Razorpay; no automatic renewal is enabled.</p>
-    {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or annual access has ended. Subscribe to continue with your selected plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
+    <p>Your configured trial period is followed by an optional subscription. Choose the monthly or annual plan that fits you. Payments are processed securely by Razorpay; no automatic renewal is enabled.</p>
+    {subscription && !subscription.access && <div className="error-banner" role="status">Your trial or subscription access has ended. Subscribe to continue with your selected plan. Existing recovery controls remain available so subscription expiry does not unexpectedly lock you out of essential recovery.</div>}
     <div className="billing-meta"><div><span>Current status</span><strong>{subscription?.status || "Loading…"}</strong></div><div><span>Access ends</span><strong>{endLabel}</strong></div></div>
     <div className="billing-plans" role="group" aria-label="Subscription plan">
-      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setPreview(null);}}>Monthly · ₹49</button>
-      <button type="button" className={plan === "annual" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("annual");setPreview(null);}}>Annual · ₹399</button>
+      <button type="button" className={plan === "monthly" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("monthly");setPreview(null);}}>{planDetails.monthly.label} · {planDetails.monthly.periodLabel} · ₹{(plans.monthly/100).toFixed(2)}</button>
+      <button type="button" className={plan === "annual" ? "primary-button" : "secondary-button"} onClick={() => {setPlan("annual");setPreview(null);}}>{planDetails.annual.label} · {planDetails.annual.periodLabel} · ₹{(plans.annual/100).toFixed(2)}</button>
     </div>
     <div className="billing-actions"><input aria-label="Discount code" placeholder="Discount code (optional)" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setPreview(null);}} maxLength={40}/><button className="secondary-button" onClick={()=>void applyCode()} disabled={busy}>Apply code</button></div>
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
@@ -319,7 +335,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
       <div className="discount-list user-ledger-list">
         {userLedger.length === 0 && <p>No registered-user ledger records returned yet.</p>}
         {userLedger.map((item,index)=><div className="discount-row user-ledger-row" key={item.username+":"+(item.subscription_id || "trial-only")+":"+index}>
-          <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · {item.subscription_active ? item.subscription_status : item.subscription_ends_at && ["active", "complimentary"].includes(String(item.subscription_status)) ? "expired" : item.subscription_status || "Not subscribed"}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
+          <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · Period: {item.subscription_duration_months === 1 ? "1 month" : item.subscription_duration_months ? `${item.subscription_duration_months} months` : "—"} · {item.subscription_active ? item.subscription_status : item.subscription_ends_at && ["active", "complimentary"].includes(String(item.subscription_status)) ? "expired" : item.subscription_status || "Not subscribed"}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
         </div>)}
       </div>
     </div>}
