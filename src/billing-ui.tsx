@@ -147,8 +147,6 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [limit, setLimit] = useState("");
   const [perUserLimit, setPerUserLimit] = useState("1");
   const [eligiblePlan, setEligiblePlan] = useState("annual");
-  const [bootstrapSecret, setBootstrapSecret] = useState("");
-  const [claimingAdmin, setClaimingAdmin] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [ledgerPage, setLedgerPage] = useState(0);
   const [editingUser, setEditingUser] = useState<string | null>(null);
@@ -159,28 +157,10 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [editSubscriptionMonths, setEditSubscriptionMonths] = useState("1");
   const [savingUserDates, setSavingUserDates] = useState(false);
 
-  async function claimAdmin(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (claimingAdmin || !bootstrapSecret) return;
-    setClaimingAdmin(true);
-    setMessage("");
-    try {
-      await request("/api/billing/admin/claim", { method: "POST", body: JSON.stringify({ bootstrapSecret }) });
-      setBootstrapSecret("");
-      await refresh();
-      setMessage("Owner billing controls enabled. Remove the one-time bootstrap secret from the server environment now.");
-    } catch (e) {
-      setMessage(errorMessage(e));
-    } finally {
-      setClaimingAdmin(false);
-    }
-  }
-
   async function refresh() {
     const result = await request("/api/billing/status");
     if (result.access === "trial" || result.access === "subscribed" || result.access === "expired") onAccessChange?.(result.access);
     setIsOwner(result.isBillingAdmin === true);
-    setBillingAdminConfigured(result.billingAdminConfigured === true);
     if (result.isBillingAdmin === true) await refreshCodes();
     else setCodes([]);
     setPlans({ monthly: Number(result.plans?.monthly || 4900), annual: Number(result.plans?.annual || result.pricePaise || 39900) });
@@ -395,14 +375,6 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
-    {!isOwner && !billingAdminConfigured && <div className="discount-admin">
-      <div className="eyebrow">FIRST-TIME OWNER SETUP</div>
-      <p>Only the first authenticated account can claim billing administration. Enter the one-time secret configured privately on the server. Do not share it.</p>
-      <form className="discount-form" onSubmit={claimAdmin}>
-        <label><span>One-time bootstrap secret</span><input type="password" value={bootstrapSecret} onChange={e=>setBootstrapSecret(e.target.value)} autoComplete="off" required /></label>
-        <button className="primary-button" type="submit" disabled={claimingAdmin}>{claimingAdmin ? "Verifying owner setup…" : "Claim billing admin"}</button>
-      </form>
-    </div>}
     {isOwner && <div className="discount-admin"><div className="eyebrow">OWNER CONTROLS</div><h3>Discount code management</h3>
       <form onSubmit={createCode} className="discount-form">
         {editingId === null
