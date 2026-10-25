@@ -177,7 +177,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     try { const result = await request("/api/billing/admin/discount-codes"); setCodes(result.items || []); setIsOwner(true); }
     catch { setIsOwner(false); }
   }
-  useEffect(() => { void refresh().catch(e => setMessage(errorMessage(e))); void refreshCodes(); }, []);
+  useEffect(() => { void refresh().catch(e => setMessage(errorMessage(e))); }, []);
   async function applyCode() {
     setMessage(""); setPreview(null);
     if (!code.trim()) { setMessage("Enter a discount code first."); return; }
