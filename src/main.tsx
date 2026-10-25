@@ -496,12 +496,16 @@ function App() {
       setMsg(
         data.deduplicated
           ? "A matching recovery request is already queued. Waiting for the latest result…"
-          : "Recovery request sent. Waiting for the device…",
+          : name === "RECOVERY_PHOTO"
+            ? `Waiting for the phone's ${args.camera === "rear" ? "back" : "front"} camera and secure photo upload…`
+            : "Recovery request sent. Waiting for the device…",
       );
 
       const isPhotoRequest = name === "RECOVERY_PHOTO";
+      // Allow enough time for Android camera startup plus upload, while command
+      // status polling exits promptly when capture/storage reports a result.
       const maxAttempts =
-        name === "GET_LOCATION" || isPhotoRequest ? 30 : 10;
+        name === "GET_LOCATION" ? 30 : isPhotoRequest ? 90 : 10;
       let completed = false;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
         // Fast initial checks make completed captures appear quickly; a small
