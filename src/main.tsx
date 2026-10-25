@@ -783,9 +783,6 @@ function App() {
           <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
             <LockKeyhole size={17} /> Set recovery PIN
           </button>
-          {billingAccess !== "expired" && <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>
-            <ShieldCheck size={17} /> {billingOpen ? "Hide subscription" : "Subscription"}
-          </button>}
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
           </button>
