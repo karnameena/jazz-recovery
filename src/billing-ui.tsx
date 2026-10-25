@@ -148,6 +148,14 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [eligiblePlan, setEligiblePlan] = useState("annual");
   const [bootstrapSecret, setBootstrapSecret] = useState("");
   const [claimingAdmin, setClaimingAdmin] = useState(false);
+  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [ledgerPage, setLedgerPage] = useState(0);
+  const [editingUser, setEditingUser] = useState<string | null>(null);
+  const [editTrialStart, setEditTrialStart] = useState("");
+  const [editTrialEnd, setEditTrialEnd] = useState("");
+  const [editSubscriptionStart, setEditSubscriptionStart] = useState("");
+  const [editSubscriptionMonths, setEditSubscriptionMonths] = useState("1");
+  const [savingUserDates, setSavingUserDates] = useState(false);
 
   async function claimAdmin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,6 +212,39 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
       setMessage(errorMessage(e));
       setIsOwner(false);
     }
+  }
+  function toLocalDateTime(value: string | null) {
+    if (!value) return "";
+    const date = new Date(value);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+  }
+  function beginEditUser(item: typeof userLedger[number]) {
+    setEditingUser(item.username);
+    setEditTrialStart(toLocalDateTime(item.trial_started_at));
+    setEditTrialEnd(toLocalDateTime(item.trial_ends_at));
+    setEditSubscriptionStart(toLocalDateTime(item.subscription_started_at));
+    setEditSubscriptionMonths(String(item.subscription_duration_months || 1));
+  }
+  async function saveUserDates(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingUser || savingUserDates) return;
+    setSavingUserDates(true);
+    setMessage("");
+    try {
+      await request("/api/billing/admin/user-ledger/update", {
+        method: "POST",
+        body: JSON.stringify({
+          username: editingUser,
+          trialStartAt: new Date(editTrialStart).toISOString(),
+          trialEndAt: new Date(editTrialEnd).toISOString(),
+          ...(editSubscriptionStart ? { subscriptionStartAt: new Date(editSubscriptionStart).toISOString(), subscriptionDurationMonths: Number(editSubscriptionMonths) } : {})
+        })
+      });
+      setMessage("Trial and subscription dates saved to PostgreSQL.");
+      setEditingUser(null);
+      await refreshCodes();
+    } catch (e) { setMessage(errorMessage(e)); }
+    finally { setSavingUserDates(false); }
   }
   function formatLedgerDate(value: string | null) {
     return value ? new Date(value).toLocaleString() : "—";
@@ -380,11 +421,29 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
           <button type="button" className="secondary-button" onClick={exportSubscriptionLedger} disabled={userLedger.length === 0}>Export subscription-ledger.json</button>
         </div>
       </div>
+      <div className="ledger-toolbar">
+        <input aria-label="Search registered users" placeholder="Search username…" value={ledgerSearch} onChange={e=>{setLedgerSearch(e.target.value);setLedgerPage(0);}} />
+        <span>{userLedger.filter(item=>item.username.toLowerCase().includes(ledgerSearch.trim().toLowerCase())).length} users</span>
+      </div>
       <div className="discount-list user-ledger-list">
         {userLedger.length === 0 && <p>No registered-user ledger records returned yet.</p>}
-        {userLedger.map((item,index)=><div className="discount-row user-ledger-row" key={item.username+":"+(item.subscription_id || "trial-only")+":"+index}>
+        {userLedger.filter(item=>item.username.toLowerCase().includes(ledgerSearch.trim().toLowerCase())).slice(ledgerPage*50,ledgerPage*50+50).map((item,index)=><div className="discount-row user-ledger-row" key={item.username+":"+(item.subscription_id || "trial-only")+":"+index}>
           <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · Period: {item.subscription_duration_months === 1 ? "1 month" : item.subscription_duration_months ? `${item.subscription_duration_months} months` : "—"} · {item.subscription_active ? item.subscription_status : item.subscription_ends_at && ["active", "complimentary"].includes(String(item.subscription_status)) ? "expired" : item.subscription_status || "Not subscribed"}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
+          <button type="button" className="secondary-button" onClick={()=>beginEditUser(item)}>{editingUser===item.username ? "Editing…" : "Edit dates"}</button>
+          {editingUser===item.username && <form className="ledger-edit-form" onSubmit={saveUserDates}>
+            <strong>Edit {item.username}</strong>
+            <label><span>Trial start</span><input type="datetime-local" value={editTrialStart} onChange={e=>setEditTrialStart(e.target.value)} required /></label>
+            <label><span>Trial end</span><input type="datetime-local" value={editTrialEnd} onChange={e=>setEditTrialEnd(e.target.value)} required /></label>
+            <label><span>Subscription start (blank leaves subscription unchanged)</span><input type="datetime-local" value={editSubscriptionStart} onChange={e=>setEditSubscriptionStart(e.target.value)} /></label>
+            {editSubscriptionStart && <label><span>Subscription duration (months, 1–120)</span><input type="number" min="1" max="120" step="1" value={editSubscriptionMonths} onChange={e=>setEditSubscriptionMonths(e.target.value)} required /></label>}
+            <div className="ledger-edit-actions"><button type="submit" className="primary-button" disabled={savingUserDates}>{savingUserDates ? "Saving…" : "Save dates"}</button><button type="button" className="secondary-button" onClick={()=>setEditingUser(null)} disabled={savingUserDates}>Cancel</button></div>
+          </form>}
         </div>)}
+        {userLedger.filter(item=>item.username.toLowerCase().includes(ledgerSearch.trim().toLowerCase())).length > 50 && <div className="ledger-pagination">
+          <button type="button" className="secondary-button" disabled={ledgerPage===0} onClick={()=>setLedgerPage(p=>Math.max(0,p-1))}>Previous</button>
+          <span>Page {ledgerPage+1} of {Math.ceil(userLedger.filter(item=>item.username.toLowerCase().includes(ledgerSearch.trim().toLowerCase())).length/50)}</span>
+          <button type="button" className="secondary-button" disabled={(ledgerPage+1)*50>=userLedger.filter(item=>item.username.toLowerCase().includes(ledgerSearch.trim().toLowerCase())).length} onClick={()=>setLedgerPage(p=>p+1)}>Next</button>
+        </div>}
       </div>
     </div>}
   </section>;
