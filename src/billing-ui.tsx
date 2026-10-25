@@ -208,6 +208,51 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   function formatLedgerDate(value: string | null) {
     return value ? new Date(value).toLocaleString() : "—";
   }
+  function exportSubscriptionLedger() {
+    const users: Record<string, {
+      trial: { startDate: string | null; endDate: string | null; active: boolean };
+      subscriptions: Array<{
+        planType: string | null;
+        startDate: string | null;
+        endDate: string | null;
+        durationMonths: number | null;
+        periodLabel: string | null;
+        amountPaidPaise: number | null;
+        status: string;
+        active: boolean;
+      }>;
+    }> = {};
+    for (const item of userLedger) {
+      const user = users[item.username] || (users[item.username] = {
+        trial: { startDate: item.trial_started_at, endDate: item.trial_ends_at, active: item.trial_active },
+        subscriptions: []
+      });
+      if (item.subscription_id) {
+        const durationMonths = item.subscription_duration_months || null;
+        user.subscriptions.push({
+          planType: item.subscription_plan,
+          startDate: item.subscription_started_at,
+          endDate: item.subscription_ends_at,
+          durationMonths,
+          periodLabel: durationMonths === 1 ? "1 month" : durationMonths ? durationMonths + " months" : null,
+          amountPaidPaise: item.amount_paid_paise == null ? null : Number(item.amount_paid_paise),
+          status: item.subscription_active ? String(item.subscription_status || "active") :
+            item.subscription_ends_at && ["active", "complimentary"].includes(String(item.subscription_status)) ? "expired" :
+            String(item.subscription_status || "unknown"),
+          active: item.subscription_active
+        });
+      }
+    }
+    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), source: "Jazz Recovery owner ledger snapshot", users }, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "subscription-ledger.json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
   useEffect(() => { void refresh().catch(e => setMessage(errorMessage(e))); }, []);
   async function applyCode() {
     setMessage(""); setPreview(null);
@@ -330,7 +375,10 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
       <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>{item.label} · {item.percent_off}% · {item.eligible_plan} · {item.redeemed_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.per_user_limit}/user · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
       <div className="user-ledger-heading">
         <div><h3>Per-user trial & subscription ledger</h3><p>Live PostgreSQL records. JSON config files define trial duration and plan rules; user dates are stored here and are not overwritten by redeploys.</p></div>
-        <button type="button" className="secondary-button" onClick={()=>void refreshCodes()}>Refresh ledger</button>
+        <div className="ledger-actions">
+          <button type="button" className="secondary-button" onClick={()=>void refreshCodes()}>Refresh ledger</button>
+          <button type="button" className="secondary-button" onClick={exportSubscriptionLedger} disabled={userLedger.length === 0}>Export subscription-ledger.json</button>
+        </div>
       </div>
       <div className="discount-list user-ledger-list">
         {userLedger.length === 0 && <p>No registered-user ledger records returned yet.</p>}
