@@ -70,6 +70,60 @@ if (-not (Test-Path $envFile)) {
     exit 0
 }
 
+# Validate the exact .env used by this launcher without displaying any secret values.
+# This catches the common mistake of editing the older server checkout instead.
+$envLines = Get-Content $envFile
+$bootstrapLines = @($envLines | Where-Object { $_ -match '^\s*JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET\s*=' })
+if ($bootstrapLines.Count -ne 1) {
+    throw "The active backend .env must contain exactly one JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET entry. Edit this exact file: '$envFile'. No secret value was displayed."
+}
+$bootstrapValue = ($bootstrapLines[0] -replace '^\s*JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET\s*=\s*', '').Trim()
+if (($bootstrapValue.StartsWith('"') -and $bootstrapValue.EndsWith('"')) -or ($bootstrapValue.StartsWith("'") -and $bootstrapValue.EndsWith("'"))) {
+    $bootstrapValue = $bootstrapValue.Substring(1, $bootstrapValue.Length - 2)
+}
+if ([string]::IsNullOrWhiteSpace($bootstrapValue) -or $bootstrapValue -match '^(REPLACE_WITH_RANDOM_SECRET|YOUR_.*|CHANGE_ME|CHANGEME) so the Vite proxy targets this exact API,
+# rather than accidentally sending requests to an older API on the default port.
+$apiPort = 8890
+$portLine = Get-Content $envFile | Where-Object { $_ -match '^\s*PORT\s*=' } | Select-Object -Last 1
+if ($portLine) {
+    $portValue = ($portLine -replace '^\s*PORT\s*=\s*', '').Trim().Trim('"').Trim("'")
+    $parsedPort = 0
+    if (-not [int]::TryParse($portValue, [ref]$parsedPort) -or $parsedPort -lt 1 -or $parsedPort -gt 65535) {
+        throw "Invalid PORT in backend .env. Use a number from 1 to 65535."
+    }
+    $apiPort = $parsedPort
+}
+$env:LOST_MODE_API_URL = "http://127.0.0.1:$apiPort"
+Write-Host "Website API proxy will target the configured local backend port $apiPort."
+
+foreach ($path in @($ServerPath, $WebPath)) {
+    if (-not (Test-Path (Join-Path $path "node_modules"))) {
+        Write-Host "Installing dependencies in $path ..."
+        Push-Location $path
+        try { npm install --no-audit --no-fund } finally { Pop-Location }
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed in '$path'." }
+    }
+}
+
+Write-Host "Starting PostgreSQL API in a separate PowerShell window..."
+# Remove an inherited blank/stale variable so Node's --env-file-if-exists=.env
+# can load the value from the exact backend .env validated above.
+Remove-Item Env:JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET -ErrorAction SilentlyContinue
+$serverCommand = "Remove-Item Env:JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET -ErrorAction SilentlyContinue; npm start; Read-Host 'Press Enter to close this API window'"
+Start-Process powershell.exe -WorkingDirectory $ServerPath -ArgumentList @("-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $serverCommand)
+
+Write-Host "Starting website at http://localhost:5190 ..."
+Set-Location $WebPath
+npm run dev
+) {
+    throw "JAZZ_BILLING_ADMIN_BOOTSTRAP_SECRET is empty or still a placeholder in the active backend .env. Edit this exact file: '$envFile'. No secret value was displayed."
+}
+$bootstrapValue = $null
+$envLines = $null
+$bootstrapLines = $null
+Write-Host "Verified: the active backend .env contains a non-empty bootstrap secret (value hidden)."
+Write-Host "Active backend .env path: $envFile"
+
 # Read only the non-secret PORT setting so the Vite proxy targets this exact API,
 # rather than accidentally sending requests to an older API on the default port.
 $apiPort = 8890
