@@ -34,7 +34,7 @@ type LocationState = {
 };
 
 type PhotoState = {
-  dataUrl: string;
+  dataUrl?: string;
   camera?: string | null;
   timestamp?: number | string | null;
 };
