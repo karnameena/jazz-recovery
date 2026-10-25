@@ -133,6 +133,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [busy, setBusy] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
+  const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
   const [newCode, setNewCode] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [percent, setPercent] = useState("10");
@@ -177,8 +178,19 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     }
   }
   async function refreshCodes() {
-    try { const result = await request("/api/billing/admin/discount-codes"); setCodes(result.items || []); setIsOwner(true); }
-    catch { setIsOwner(false); }
+    try {
+      const result = await request("/api/billing/admin/discount-codes");
+      setCodes(result.items || []);
+      const ledger = await request("/api/billing/admin/user-ledger");
+      setUserLedger(ledger.items || []);
+      setIsOwner(true);
+    } catch (e) {
+      setMessage(errorMessage(e));
+      setIsOwner(false);
+    }
+  }
+  function formatLedgerDate(value: string | null) {
+    return value ? new Date(value).toLocaleString() : "—";
   }
   useEffect(() => { void refresh().catch(e => setMessage(errorMessage(e))); }, []);
   async function applyCode() {
@@ -300,6 +312,16 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
         {editingId !== null && <button className="secondary-button" type="button" onClick={()=>{setEditingId(null);setStartsAt("");setExpires("");setLimit("");setPerUserLimit("1");setEligiblePlan("annual");}}>Cancel edit</button>}
       </form>
       <div className="discount-list">{codes.map(item=><div className="discount-row" key={item.id}><span>{item.label} · {item.percent_off}% · {item.eligible_plan} · {item.redeemed_count}{item.max_redemptions?"/"+item.max_redemptions:""} used · {item.per_user_limit}/user · {item.active?"Active":"Disabled"}</span><div><button className="secondary-button" onClick={()=>editCode(item)}>Edit</button> <button className="secondary-button" onClick={()=>void toggleCode(item.id,!item.active)}>{item.active?"Disable":"Enable"}</button></div></div>)}</div>
+      <div className="user-ledger-heading">
+        <div><h3>Per-user trial & subscription ledger</h3><p>Live PostgreSQL records. JSON config files define trial duration and plan rules; user dates are stored here and are not overwritten by redeploys.</p></div>
+        <button type="button" className="secondary-button" onClick={()=>void refreshCodes()}>Refresh ledger</button>
+      </div>
+      <div className="discount-list user-ledger-list">
+        {userLedger.length === 0 && <p>No registered-user ledger records returned yet.</p>}
+        {userLedger.map((item,index)=><div className="discount-row user-ledger-row" key={item.username+":"+(item.subscription_id || "trial-only")+":"+index}>
+          <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · {item.subscription_status || "Not subscribed"}{item.subscription_active ? " (active)" : ""}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
+        </div>)}
+      </div>
     </div>}
   </section>;
 }
