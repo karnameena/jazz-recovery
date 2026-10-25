@@ -319,7 +319,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
       <div className="discount-list user-ledger-list">
         {userLedger.length === 0 && <p>No registered-user ledger records returned yet.</p>}
         {userLedger.map((item,index)=><div className="discount-row user-ledger-row" key={item.username+":"+(item.subscription_id || "trial-only")+":"+index}>
-          <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · {item.subscription_status || "Not subscribed"}{item.subscription_active ? " (active)" : ""}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
+          <span><strong>{item.username}</strong><br />Trial: {formatLedgerDate(item.trial_started_at)} → {formatLedgerDate(item.trial_ends_at)} · {item.trial_active ? "Trial active" : item.trial_ends_at ? "Trial expired" : "No trial record"}<br />Subscription: {item.subscription_plan || "—"} · {item.subscription_active ? item.subscription_status : item.subscription_ends_at && ["active", "complimentary"].includes(String(item.subscription_status)) ? "expired" : item.subscription_status || "Not subscribed"}<br />Start: {formatLedgerDate(item.subscription_started_at)} · End: {formatLedgerDate(item.subscription_ends_at)} · Paid: {item.amount_paid_paise == null ? "—" : "₹"+(Number(item.amount_paid_paise)/100).toFixed(2)}</span>
         </div>)}
       </div>
     </div>}
