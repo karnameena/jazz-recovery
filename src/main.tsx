@@ -712,9 +712,16 @@ function App() {
     setPhotoLoadError("");
     fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, { credentials: "include", cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Photo request failed (${response.status})`);
+        if (!response.ok) {
+          const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+          const data = contentType.includes("application/json") ? await response.json().catch(() => ({})) : {};
+          if (response.status === 401) {
+            throw new Error("Your Jazz Recovery session is not valid. Sign in again, then reopen this device.");
+          }
+          throw new Error(data.error || `The saved recovery photo could not be loaded (HTTP ${response.status}). The existing photo record has not been deleted.`);
+        }
         const blob = await response.blob();
-        if (!blob.type.startsWith("image/")) throw new Error("The saved photo response was not an image.");
+        if (!blob.type.startsWith("image/")) throw new Error("The server returned an unexpected response instead of a recovery photo.");
         const url = URL.createObjectURL(blob);
         if (cancelled) { URL.revokeObjectURL(url); return; }
         setPhotoUrl((previous) => {
@@ -722,7 +729,11 @@ function App() {
           return { deviceId: current.id, url };
         });
       })
-      .catch(() => { if (!cancelled) setPhotoLoadError("The saved recovery photo could not be loaded. The server has retained the stored image."); });
+      .catch((error) => {
+        if (!cancelled) setPhotoLoadError(error instanceof Error
+          ? error.message
+          : "The saved recovery photo could not be loaded. The existing photo record has not been deleted.");
+      });
     return () => { cancelled = true; };
   }, [device?.id, device?.photo?.timestamp, device?.photo?.camera, device?.photo?.dataUrl]);
 
