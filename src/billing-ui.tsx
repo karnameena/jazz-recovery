@@ -120,6 +120,7 @@ declare global {
 }
 type SubscriptionState = { status: string; access: boolean; trialEndsAt: string | null; paidEndsAt: string | null; planType: string | null };
 export function BillingPanel() {
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
   const [code, setCode] = useState("");
   const [plans, setPlans] = useState({ monthly: 4900, annual: 39900 });
