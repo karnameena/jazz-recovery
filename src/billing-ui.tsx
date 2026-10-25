@@ -136,6 +136,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [billingAdminConfigured, setBillingAdminConfigured] = useState(false);
   const [codes, setCodes] = useState<Array<{id:string;label:string;percent_off:number;active:boolean;starts_at:string;expires_at:string|null;redeemed_count:number;max_redemptions:number|null;eligible_plan:string;per_user_limit:number}>>([]);
   const [userLedger, setUserLedger] = useState<Array<{username:string;trial_started_at:string|null;trial_ends_at:string|null;trial_active:boolean;subscription_id:string|null;subscription_plan:string|null;subscription_duration_months:number|null;subscription_status:string|null;subscription_started_at:string|null;subscription_ends_at:string|null;amount_paid_paise:number|null;subscription_active:boolean}>>([]);
   const [newCode, setNewCode] = useState("");
@@ -179,6 +180,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     const result = await request("/api/billing/status");
     if (result.access === "trial" || result.access === "subscribed" || result.access === "expired") onAccessChange?.(result.access);
     setIsOwner(result.isBillingAdmin === true);
+    setBillingAdminConfigured(result.billingAdminConfigured === true);
     if (result.isBillingAdmin === true) await refreshCodes();
     else setCodes([]);
     setPlans({ monthly: Number(result.plans?.monthly || 4900), annual: Number(result.plans?.annual || result.pricePaise || 39900) });
@@ -393,7 +395,7 @@ export function BillingPanel({ onAccessChange }: { onAccessChange?: (access: "tr
     {preview && <p className="billing-price">Discount {preview.percentOff}% · Total <strong>₹{(preview.amountPaise/100).toFixed(2)}</strong></p>}
     <button className="primary-button" disabled={busy || checkoutOpen || subscription?.status === "active" || subscription?.status === "complimentary"} onClick={()=>void subscribe()}>{busy?"Preparing secure checkout…":checkoutOpen?"Checkout open…":`Subscribe ${plan === "monthly" ? "monthly" : "annually"} — ₹${(selectedPricePaise/100).toFixed(2)}`}</button>
     {message && <p className="billing-message" role="status">{message}</p>}
-    {!isOwner && <div className="discount-admin">
+    {!isOwner && !billingAdminConfigured && <div className="discount-admin">
       <div className="eyebrow">FIRST-TIME OWNER SETUP</div>
       <p>Only the first authenticated account can claim billing administration. Enter the one-time secret configured privately on the server. Do not share it.</p>
       <form className="discount-form" onSubmit={claimAdmin}>
