@@ -169,7 +169,7 @@ class MainActivity : Activity() {
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             row.forEachIndexed { index, item ->
                 val card = featureCard(item.icon, item.title, item.subtitle, item.action)
-                val lp = LinearLayout.LayoutParams(0, dp(116), 1f)
+                val lp = LinearLayout.LayoutParams(0, dp(88), 1f)
                 if (index == 0) lp.marginEnd = dp(8) else lp.marginStart = dp(8)
                 lp.bottomMargin = dp(12)
                 line.addView(card, lp)
