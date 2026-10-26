@@ -9,10 +9,10 @@ import android.os.Build
 import android.util.Log
 
 /**
- * Restarts only the owner-opted-in location/heartbeat agent after boot.
- * Android restricts background camera access, so boot startup deliberately
- * does not claim remote camera readiness; the owner must reopen the app and
- * enable Recovery Readiness to reactivate camera capture.
+ * Restarts the owner's opted-in recovery agent after boot when required
+ * permissions and saved server/device credentials are available. Camera consent
+ * is retained and camera commands are attempted after restart, but Android may
+ * still reject background camera access; command results must report that failure.
  */
 class RecoveryBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
