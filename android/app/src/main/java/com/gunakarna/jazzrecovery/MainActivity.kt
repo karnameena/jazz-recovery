@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var server: EditText
     private lateinit var tokenDisplay: EditText
     private lateinit var idDisplay: EditText
+    private lateinit var deviceIdSummary: TextView
     private var deviceId: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +60,13 @@ class MainActivity : Activity() {
             text = name; setOnClickListener { run() }
         }) }
         label("JAZZ RECOVERY · v1.0.0")
-        label("Independent device ID: $deviceId")
+        deviceIdSummary = TextView(this).apply {
+            text = "Current device ID: $deviceId"
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            setPadding(0, 12, 0, 12)
+        }
+        root.addView(deviceIdSummary)
         label("Server setup")
         server = field("https://server.example.com", prefs.getString("server", "") ?: "")
         action("Save HTTPS URL") {
@@ -366,6 +373,7 @@ class MainActivity : Activity() {
                         .commit()
                     if (saved) {
                         deviceId = canonicalDeviceId
+                        deviceIdSummary.text = "Current device ID: $canonicalDeviceId"
                         idDisplay.setText(canonicalDeviceId)
                         clearFields()
                         show("Existing device restored. ID and recovery history preserved. You can now send a heartbeat or enable Recovery Readiness.")
