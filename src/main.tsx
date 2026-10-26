@@ -447,10 +447,7 @@ function App() {
   useEffect(() => {
     if (!login || ((billingAccess !== "trial" && billingAccess !== "subscribed") && !isBillingAdmin)) return;
     const timer = window.setInterval(() => {
-      if (selected) {
-        void refresh(selected).catch(() => {});
-        void load().catch(() => {});
-      }
+      if (selected) void refresh(selected).catch(() => {});
       // Billing expiry is checked independently of device selection, so access
       // still closes on time even when an account has no currently selected device.
       void api("/api/billing/status").then(status => {
@@ -462,7 +459,16 @@ function App() {
         }
       }).catch(() => {});
     }, 10000);
-    return () => window.clearInterval(timer);
+    // Refresh the complete device list less frequently. The selected device is
+    // refreshed every 10 seconds above and photo commands have their own faster
+    // targeted polling; reloading every device during capture adds needless DB work.
+    const deviceListTimer = window.setInterval(() => {
+      if (selected) void load().catch(() => {});
+    }, 30000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(deviceListTimer);
+    };
   }, [login, billingAccess, selected, isBillingAdmin]);
 
   function isActionBusy(name: string, args: Record<string, unknown> = {}) {
