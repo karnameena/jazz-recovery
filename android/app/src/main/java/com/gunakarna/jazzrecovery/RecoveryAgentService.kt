@@ -278,11 +278,17 @@ class RecoveryAgentService : Service() {
         var session: CameraCaptureSession? = null
         var openError: String? = null
         var sessionError = false
+        val captureFinalImage = java.util.concurrent.atomic.AtomicBoolean(false)
+        val meteringImageLatch = java.util.concurrent.atomic.AtomicReference<CountDownLatch?>(null)
         reader.setOnImageAvailableListener({ source ->
             source.acquireLatestImage()?.use { image ->
-                val buffer = image.planes[0].buffer
-                imageBytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
-                latch.countDown()
+                if (captureFinalImage.get()) {
+                    val buffer = image.planes[0].buffer
+                    imageBytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                    latch.countDown()
+                } else {
+                    meteringImageLatch.get()?.countDown()
+                }
             }
         }, handler)
         try {
@@ -309,12 +315,59 @@ class RecoveryAgentService : Service() {
             }, handler)
             if (!configured.await(6, TimeUnit.SECONDS)) return photoFailure("CAMERA_SESSION_TIMEOUT", camera, captureStartedAt)
             if (session == null) return photoFailure(if (sessionError) "CAMERA_SESSION_CONFIG_FAILED" else "CAMERA_SESSION_FAILED", camera, captureStartedAt)
-            val request = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+            // Give the camera a metering frame before accepting the final photo. The
+            // previous one-shot capture could be taken before auto-exposure/white-balance
+            // had settled, producing an almost-black or badly exposed image on some devices.
+            val requestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(reader.surface)
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                val aeModes = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES)
+                if (aeModes?.contains(CaptureRequest.CONTROL_AE_MODE_ON) == true) {
+                    set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                }
+                val awbModes = characteristics.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)
+                if (awbModes?.contains(CaptureRequest.CONTROL_AWB_MODE_AUTO) == true) {
+                    set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                }
+                val afModes = characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+                if (afModes?.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) == true) {
+                    set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                }
                 set(CaptureRequest.JPEG_ORIENTATION, 0)
-            }.build()
-            session!!.capture(request, object : CameraCaptureSession.CaptureCallback() {}, handler)
+            }
+            var finalAeState: Int? = null
+            for (attempt in 0 until 2) {
+                val meteringImageReady = CountDownLatch(1)
+                val meteringResultReady = CountDownLatch(1)
+                var aeState: Int? = null
+                meteringImageLatch.set(meteringImageReady)
+                session!!.capture(requestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult
+                    ) {
+                        aeState = result.get(CaptureResult.CONTROL_AE_STATE)
+                        meteringResultReady.countDown()
+                    }
+                }, handler)
+                val resultArrived = meteringResultReady.await(1200, TimeUnit.MILLISECONDS)
+                val imageArrived = meteringImageReady.await(1200, TimeUnit.MILLISECONDS)
+                meteringImageLatch.compareAndSet(meteringImageReady, null)
+                if (!imageArrived) {
+                    return photoFailure("CAMERA_EXPOSURE_METERING_TIMEOUT", camera, captureStartedAt)
+                }
+                finalAeState = if (resultArrived) aeState else null
+                if (!resultArrived || aeState == null ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_LOCKED ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_FLASH_REQUIRED) {
+                    break
+                }
+            }
+            Log.i("JazzRecoveryPhoto", "Exposure metering camera=" + camera + " aeState=" + (finalAeState?.toString() ?: "unknown"))
+            captureFinalImage.set(true)
+            session!!.capture(requestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {}, handler)
             if (!latch.await(8, TimeUnit.SECONDS) || imageBytes == null) {
                 return photoFailure("CAMERA_CAPTURE_TIMEOUT_OR_OS_BLOCKED", camera, captureStartedAt)
             }
