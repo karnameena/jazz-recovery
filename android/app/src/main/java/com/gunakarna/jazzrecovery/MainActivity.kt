@@ -74,6 +74,28 @@ class MainActivity : Activity() {
         }
         action("Test /health") { request("GET", "/health", null, false) }
 
+        action("Enable Recovery Readiness") {
+            val needed = mutableListOf<String>()
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.POST_NOTIFICATIONS)
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.CAMERA)
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+                needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (needed.isNotEmpty()) {
+                requestPermissions(needed.distinct().toTypedArray(), 101)
+                show("Grant permissions, then tap Enable Recovery Readiness again")
+            } else {
+                val intent = Intent(this, RecoveryAgentService::class.java)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+                show("Recovery Readiness started")
+            }
+        }
+        action("Stop Recovery Readiness") {
+            stopService(Intent(this, RecoveryAgentService::class.java))
+            show("Recovery Readiness stopped")
+        }
+
         label("Re-pair an existing website device")
         label("Use the same username and password as the website. Paste the exact registered Device ID shown in the website dashboard. Do not use the temporary installation ID above unless it exactly matches the website. Re-pairing keeps the existing device record and history.")
         repairUsername = field("Website username", "")
