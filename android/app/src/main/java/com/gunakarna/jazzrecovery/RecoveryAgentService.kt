@@ -37,9 +37,9 @@ class RecoveryAgentService : Service() {
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
     private val channelId = "jazz_recovery_ready"
     private val photoQueueDir by lazy { File(filesDir, "recovery-photo-pending") }
-    private val maxPhotoBytes = 4 * 1024 * 1024
-    private val jpegLongEdge = 1440
-    private val jpegQuality = 78
+    private val maxPhotoBytes = 5 * 1024 * 1024
+    private val jpegLongEdge = 2560
+    private val jpegQuality = 90
 
     override fun onCreate() {
         super.onCreate()
@@ -265,7 +265,7 @@ class RecoveryAgentService : Service() {
         val sizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?.getOutputSizes(android.graphics.ImageFormat.JPEG)
             ?: return photoFailure("JPEG_OUTPUT_UNAVAILABLE", camera, captureStartedAt)
-        val size = sizes.filter { maxOf(it.width, it.height) <= 1920 }
+        val size = sizes.filter { maxOf(it.width, it.height) <= 2560 }
             .maxByOrNull { it.width.toLong() * it.height.toLong() }
             ?: sizes.minByOrNull { it.width.toLong() * it.height.toLong() }
             ?: return photoFailure("JPEG_OUTPUT_UNAVAILABLE", camera, captureStartedAt)
@@ -356,7 +356,7 @@ class RecoveryAgentService : Service() {
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         val largest = maxOf(bounds.outWidth, bounds.outHeight)
         val sample = Integer.highestOneBit(maxOf(1, (largest + jpegLongEdge - 1) / jpegLongEdge)).coerceAtLeast(1)
-        val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 }
+        val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
         val decoded = BitmapFactory.decodeByteArray(source, 0, source.size, options) ?: return null
         val bitmap = if (maxOf(decoded.width, decoded.height) > jpegLongEdge) {
             val scale = jpegLongEdge.toFloat() / maxOf(decoded.width, decoded.height)
@@ -364,7 +364,7 @@ class RecoveryAgentService : Service() {
                 (decoded.height * scale).toInt().coerceAtLeast(1), true)
         } else decoded
         return try {
-            for (quality in listOf(jpegQuality, 70, 62, 54, 46)) {
+            for (quality in listOf(jpegQuality, 86, 82, 78, 74, 70, 66)) {
                 val output = java.io.ByteArrayOutputStream()
                 if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) return null
                 val bytes = output.toByteArray()
