@@ -317,3 +317,57 @@
     height: 340px;
   }
 }
+
+
+/* Subscription panel, registration toast, and owner-only IMEI reveal. */
+.billing-panel-wrap {
+  position: relative;
+  z-index: 1;
+  width: min(980px, 100%);
+  margin: 0 auto 20px;
+}
+.toast-notice {
+  position: fixed;
+  z-index: 1000;
+  top: 18px;
+  right: 18px;
+  width: min(420px, calc(100vw - 36px));
+  padding: 14px 18px;
+  border: 1px solid rgba(95, 230, 255, 0.45);
+  border-radius: 14px;
+  background: rgba(10, 20, 42, 0.97);
+  color: var(--text);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+}
+.imei-reveal {
+  margin-top: 14px;
+  padding: 18px 20px;
+}
+.imei-reveal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.imei-reveal-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.imei-number {
+  overflow-wrap: anywhere;
+  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  letter-spacing: 0.08em;
+}
+.imei-copy-message {
+  margin: 10px 0 0;
+  color: var(--cyan);
+  font-size: 0.9rem;
+}
+@media (max-width: 600px) {
+  .toast-notice { top: 10px; right: 10px; width: calc(100vw - 20px); }
+  .imei-reveal-row { align-items: stretch; }
+  .imei-reveal-row .secondary-button { justify-content: center; }
+}

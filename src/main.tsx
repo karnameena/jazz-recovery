@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   BatteryCharging,
   Camera,
+  Copy,
   ChevronRight,
   CircleDot,
   Crosshair,
@@ -13,7 +14,6 @@ import {
   LockKeyhole,
   LogOut,
   MapPin,
-  Mic,
   Navigation,
   Radio,
   RefreshCw,
@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import "./responsive-fixes.css";
-import { VoiceInput } from "./voice/VoiceInput";
+import { BillingPanel } from "./billing-ui";
 
 type LocationState = {
   latitude: number;
@@ -34,7 +34,7 @@ type LocationState = {
 };
 
 type PhotoState = {
-  dataUrl: string;
+  dataUrl?: string;
   camera?: string | null;
   timestamp?: number | string | null;
 };
@@ -54,6 +54,7 @@ type Device = {
   mode: string;
   location: LocationState | null;
   photo: PhotoState | null;
+  imei?: string | null;
 };
 
 const rawApiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
@@ -85,7 +86,9 @@ function apiBaseUrl() {
   }
 }
 
-const API_BASE_URL = apiBaseUrl();
+// Local Vite development must use the same-origin /api proxy, just like billing-ui.tsx.
+// Hosted builds continue to use VITE_API_BASE_URL.
+const API_BASE_URL = import.meta.env.DEV ? "" : apiBaseUrl();
 
 async function api(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers || {});
@@ -198,7 +201,7 @@ function actionKey(name: string, args: Record<string, unknown> = {}) {
   return name;
 }
 
-function Login({ done }: { done: () => void }) {
+function Login({ done }: { done: (registration?: { trialActivated: boolean }) => void }) {
   const [registering, setRegistering] = useState(false);
   const [forgotPassword, setForgotPassword] = useState(false);
   const [useRecoveryPin, setUseRecoveryPin] = useState(false);
@@ -214,6 +217,7 @@ function Login({ done }: { done: () => void }) {
     setSubmitting(true);
     const form = event.currentTarget;
     const fields = new FormData(form);
+    let trialActivated = false;
     const username = String(fields.get("username") || "").trim();
     let password = String(fields.get("password") || "");
     try {
@@ -264,7 +268,8 @@ function Login({ done }: { done: () => void }) {
         const body = JSON.stringify({ username, password, confirmPassword, deviceName, imei, deviceId, deviceToken, recoveryPin, confirmRecoveryPin });
         password = "";
         if (passwordRef.current) passwordRef.current.value = "";
-        await api("/api/auth/register", { method: "POST", body });
+        const registration = await api("/api/auth/register", { method: "POST", body });
+        trialActivated = Boolean(registration.trialActivated);
       } else {
         const body = JSON.stringify({ username, password });
         password = "";
@@ -272,7 +277,7 @@ function Login({ done }: { done: () => void }) {
         await api("/api/auth/login", { method: "POST", body });
       }
       form.reset();
-      done();
+      done(registering ? { trialActivated } : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : (registering ? "Registration failed" : "Login failed"));
     } finally {
@@ -349,7 +354,14 @@ function App() {
   const [device, setDevice] = useState<Device | null>(null);
   const [msg, setMsg] = useState("");
   const [activeCount, setActiveCount] = useState(0);
-  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
+  const [billingAccess, setBillingAccess] = useState<"loading" | "trial" | "subscribed" | "expired" | "error">("loading");
+  const [isBillingAdmin, setIsBillingAdmin] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<{ deviceId: number; url: string } | null>(null);
+  const [photoLoadError, setPhotoLoadError] = useState("");
+  const [toast, setToast] = useState("");
+  const [imeiVisible, setImeiVisible] = useState(false);
+  const [imeiCopyMessage, setImeiCopyMessage] = useState("");
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationFeedback, setLocationFeedback] = useState("");
 
@@ -396,19 +408,62 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (login) void load();
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed" || isBillingAdmin)) void load().catch(() => {});
+  }, [login, billingAccess, isBillingAdmin]);
+
+  useEffect(() => {
+    if (!login) { setBillingAccess("loading"); return; }
+    let cancelled = false;
+    setBillingAccess("loading");
+    api("/api/billing/status").then((status) => {
+      if (cancelled) return;
+      setIsBillingAdmin(status.isBillingAdmin === true);
+      if (status.access === "trial" || status.access === "subscribed" || status.access === "expired") {
+        setBillingAccess(status.access);
+      } else {
+        setBillingAccess("error");
+      }
+      if (status.access === "expired") {
+        if (status.isBillingAdmin === true) {
+          // The owner bypasses the subscription paywall and lands on owner controls.
+          setBillingOpen(true);
+        } else {
+          setBillingOpen(false);
+          setToast("Your 7-day trial or subscription has expired. Choose a plan to continue.");
+        }
+      }
+    }).catch(() => { if (!cancelled) setBillingAccess("error"); });
+    return () => { cancelled = true; };
   }, [login]);
+
   useEffect(() => {
-    if (login && selected) void refresh(selected);
-  }, [login, selected]);
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
   useEffect(() => {
-    if (!login || !selected) return;
+    if (login && (billingAccess === "trial" || billingAccess === "subscribed" || isBillingAdmin) && selected) void refresh(selected).catch(() => {});
+  }, [login, billingAccess, selected, isBillingAdmin]);
+  useEffect(() => {
+    if (!login || ((billingAccess !== "trial" && billingAccess !== "subscribed") && !isBillingAdmin)) return;
     const timer = window.setInterval(() => {
-      void refresh(selected).catch(() => {});
-      void load().catch(() => {});
-    }, 2000);
+      if (selected) {
+        void refresh(selected).catch(() => {});
+        void load().catch(() => {});
+      }
+      // Billing expiry is checked independently of device selection, so access
+      // still closes on time even when an account has no currently selected device.
+      void api("/api/billing/status").then(status => {
+        if (status.access === "expired") {
+          if (status.isBillingAdmin !== true) setBillingOpen(false);
+          setBillingAccess("expired");
+        } else if (status.access === "trial" || status.access === "subscribed") {
+          setBillingAccess(status.access);
+        }
+      }).catch(() => {});
+    }, 10000);
     return () => window.clearInterval(timer);
-  }, [login, selected]);
+  }, [login, billingAccess, selected, isBillingAdmin]);
 
   function isActionBusy(name: string, args: Record<string, unknown> = {}) {
     return actionLocks.current.has(actionKey(name, args));
@@ -438,6 +493,9 @@ function App() {
         method: "POST",
         body: JSON.stringify({ action: name, args }),
       });
+      if ((name === "RECOVERY_PHOTO" || name === "GET_LOCATION") && !data.commandId) {
+        throw new Error("The recovery server did not return a command ID. No result can be tracked safely.");
+      }
       setMsg(
         data.deduplicated
           ? "A matching recovery request is already queued. Waiting for the latest result…"
@@ -448,6 +506,32 @@ function App() {
         name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+        // Read the command outcome as well as the device snapshot. This lets the
+        // UI report camera/storage failures instead of silently polling forever.
+        if (name === "RECOVERY_PHOTO" && data.commandId) {
+          try {
+            const commandStatus = await api(
+              `/api/devices/${selectedAtStart}/commands/${encodeURIComponent(data.commandId)}`,
+            );
+            if (["FAILED", "EXPIRED"].includes(commandStatus.status)) {
+              const reason = commandStatus.result?.error || commandStatus.result?.status ||
+                (commandStatus.status === "EXPIRED" ? "The recovery request expired before upload completed." : "The server rejected the recovery photo.");
+              setMsg(`Photo upload failed: ${reason}. The previous verified photo is retained.`);
+              break;
+            }
+            if (commandStatus.status === "DEVICE_OFFLINE" && attempts % 5 === 0) {
+              setMsg("The phone is offline. The photo request is not confirmed; the previous verified photo is retained.");
+            }
+          } catch (statusError) {
+            if (attempts === 0) {
+              setMsg(statusError instanceof Error
+                ? `Photo status check failed: ${statusError.message}`
+                : "Photo status check failed. Verify the backend command-status route.");
+            }
+          }
+        }
+
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
         if (attempts % 3 === 0) void load().catch(() => {});
@@ -558,13 +642,14 @@ function App() {
   }
 
   async function logout() {
-    setVoiceOpen(false);
     actionLocks.current.clear();
     setActiveCount(0);
     await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(
       () => {},
     );
     setLogin(false);
+    setBillingAccess("loading");
+    setBillingOpen(false);
     setDevices([]);
     setDevice(null);
   }
@@ -634,10 +719,47 @@ function App() {
     setMsg("Recovery report downloaded.");
   }
 
+  useEffect(() => {
+    const current = device;
+    if (!current?.photo) {
+      setPhotoLoadError("");
+      setPhotoUrl((previous) => {
+        if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
+        return null;
+      });
+      return;
+    }
+    if (current.photo.dataUrl) {
+      setPhotoLoadError("");
+      setPhotoUrl((previous) => {
+        if (previous?.url.startsWith("blob:") && previous.url !== current.photo?.dataUrl) URL.revokeObjectURL(previous.url);
+        return { deviceId: current.id, url: current.photo.dataUrl };
+      });
+      return;
+    }
+    let cancelled = false;
+    setPhotoLoadError("");
+    fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, { credentials: "include", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Photo request failed (${response.status})`);
+        const blob = await response.blob();
+        if (!blob.type.startsWith("image/")) throw new Error("The saved photo response was not an image.");
+        const url = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        setPhotoUrl((previous) => {
+          if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
+          return { deviceId: current.id, url };
+        });
+      })
+      .catch(() => { if (!cancelled) setPhotoLoadError("The saved recovery photo could not be loaded. The server has retained the stored image."); });
+    return () => { cancelled = true; };
+  }, [device?.id, device?.photo?.timestamp, device?.photo?.camera, device?.photo?.dataUrl]);
+
   const onlineCount = useMemo(
     () => devices.filter((item) => item.online).length,
     [devices],
   );
+  const currentPhotoSrc = device?.photo?.dataUrl || (device && photoUrl?.deviceId === device.id ? photoUrl.url : "");
 
   if (!ready)
     return (
@@ -645,12 +767,20 @@ function App() {
         <RefreshCw className="spin" /> Loading secure recovery…
       </div>
     );
-  if (!login) return <Login done={() => setLogin(true)} />;
+  if (!login) return <Login done={(registration) => {
+    setLogin(true);
+    if (registration?.trialActivated) setToast("Your 7-day free trial is now active.");
+    else if (registration) setToast("Your Jazz Recovery account was created successfully.");
+  }} />;
+  if (billingAccess === "loading") return <div className="loading-screen"><RefreshCw className="spin" /> Verifying subscription access…</div>;
+  if (billingAccess === "error") return <main className="auth-shell"><section className="auth-card glass-panel"><div className="eyebrow">JAZZ SECURE RECOVERY</div><h1>Could not verify account access</h1><p className="auth-subtitle">The server did not return your current trial or subscription status. The dashboard is hidden until access can be verified. Check the backend and try again.</p><button className="primary-button full-width" onClick={() => window.location.reload()}>Retry access check</button><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
+  if (billingAccess === "expired" && !isBillingAdmin) return <main className="auth-shell"><section className="auth-card glass-panel subscription-gate"><div className="brand-logo"><img src="https://raw.githubusercontent.com/karnameena/jazz-recovery/refs/heads/feature/neon-web-compat-20261012/src/Logo-jazz.png" alt="Jazz Logo" width={95} height={95} /></div><div className="eyebrow">JAZZ RECOVERY ACCESS</div><h1>Choose a subscription plan</h1><p className="auth-subtitle">Your free trial or previous subscription has ended. Subscribe to restore dashboard access. Your registered devices and saved recovery evidence remain stored.</p><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /><button className="secondary-button full-width" onClick={() => void logout()}>Logout</button></section></main>;
 
   return (
     <div className="app-shell">
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
+      {toast && <div className="toast-notice" role="status" aria-live="polite">{toast}</div>}
 
       <header className="topbar glass-panel">
         <div className="brand-block">
@@ -689,11 +819,14 @@ function App() {
           <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
             <LockKeyhole size={17} /> Set recovery PIN
           </button>
+          {isBillingAdmin && <button className="ghost-button" onClick={() => setBillingOpen((open) => !open)}>{billingOpen ? "Hide owner controls" : "Owner admin"}</button>}
           <button className="ghost-button danger-hover" onClick={logout}>
             <LogOut size={17} /> Logout
           </button>
         </div>
       </header>
+
+      {billingOpen && (billingAccess !== "expired" || isBillingAdmin) && <div className="billing-panel-wrap"><BillingPanel onAccessChange={(access) => setBillingAccess(access)} /></div>}
 
       <div className="dashboard-layout">
         <aside className="device-sidebar glass-panel">
@@ -715,7 +848,7 @@ function App() {
               <button
                 key={item.id}
                 className={`device-row ${selected === item.id ? "selected" : ""}`}
-                onClick={() => setSelected(item.id)}
+                onClick={() => { setSelected(item.id); setImeiVisible(false); setImeiCopyMessage(""); }}
               >
                 <div className={`device-avatar ${item.online ? "live" : ""}`}>
                   <Smartphone size={21} />
@@ -894,17 +1027,39 @@ function App() {
                 </button>
                 <button
                   className="voice-toggle"
-                  aria-expanded={voiceOpen}
-                  aria-controls="recovery-voice-panel"
-                  onClick={() => setVoiceOpen((open) => !open)}
+                  aria-expanded={imeiVisible}
+                  aria-controls="registered-imei-panel"
+                  onClick={() => { setImeiVisible((visible) => !visible); setImeiCopyMessage(""); }}
                 >
-                  <Mic />
+                  <Smartphone />
                   <div>
-                    <strong>Voice Input</strong>
-                    <span>Remote recovery voice broadcast</span>
+                    <strong>{imeiVisible ? "Hide IMEI" : "Show IMEI"}</strong>
+                    <span>View this device's registered IMEI</span>
                   </div>
                 </button>
               </section>
+
+              {imeiVisible && (
+                <section id="registered-imei-panel" className="glass-panel imei-reveal" aria-label="Registered IMEI">
+                  {device.imei ? (
+                    <div className="imei-reveal-row">
+                      <div>
+                        <span className="eyebrow">REGISTERED IMEI</span>
+                        <strong className="imei-number">{device.imei}</strong>
+                      </div>
+                      <button type="button" className="secondary-button" onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(device.imei || "");
+                          setImeiCopyMessage("IMEI copied to clipboard.");
+                        } catch {
+                          setImeiCopyMessage("Clipboard unavailable. Select the IMEI and copy it manually.");
+                        }
+                      }}><Copy size={16} /> Copy IMEI</button>
+                    </div>
+                  ) : <p>No IMEI is registered for this device.</p>}
+                  {imeiCopyMessage && <p className="imei-copy-message" role="status">{imeiCopyMessage}</p>}
+                </section>
+              )}
 
               <section
                 className="glass-panel"
@@ -981,19 +1136,6 @@ function App() {
                   Location Services changed.
                 </p>
               </section>
-
-              {voiceOpen && (
-                <VoiceInput
-                  key={selected}
-                  deviceName={
-                    devices.find((item) => item.id === selected)?.deviceName ||
-                    "Selected device"
-                  }
-                  disabled={activeCount > 0 || device.id !== selected}
-                  onAction={action}
-                  onClose={() => setVoiceOpen(false)}
-                />
-              )}
 
               {(msg || activeCount > 0) && (
                 <div className="command-banner glass-panel">
@@ -1093,8 +1235,9 @@ function App() {
                   {device.photo ? (
                     <>
                       <div className="photo-frame">
-                        <img src={device.photo.dataUrl} alt="Latest recovery" />
+                        {currentPhotoSrc ? <img src={currentPhotoSrc} alt="Latest recovery" /> : <p role="status">Loading saved recovery photo…</p>}
                       </div>
+                      {photoLoadError && <p className="error-banner" role="status">{photoLoadError}</p>}
                       <div className="photo-meta">
                         <span>{device.photo.camera || "camera"} camera</span>
                         <span>{formatTime(device.photo.timestamp)}</span>
@@ -1102,7 +1245,7 @@ function App() {
                       <div className="card-actions">
                         <a
                           className="primary-button"
-                          href={device.photo.dataUrl}
+                          href={currentPhotoSrc || undefined}
                           download={`jazz-recovery-${device.photo.camera || "photo"}.jpg`}
                         >
                           <Download size={17} /> Download Recovery Photo

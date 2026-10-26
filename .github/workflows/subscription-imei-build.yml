@@ -1,0 +1,24 @@
+name: Subscription and IMEI dashboard build
+
+on:
+  push:
+    branches:
+      - feature/subscription-imei-dashboard-test-20261025
+  pull_request:
+    branches:
+      - feature/hosted-registration-pin-passkey-ui-20261023
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out test branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build website
+        run: npm run build

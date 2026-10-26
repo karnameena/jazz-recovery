@@ -108,3 +108,15 @@ Deploys automatically when this repository's `render-web` branch updates, if you
 ## Source integration and rollback
 
 The existing web source was already identical to the latest monorepo web source at the time of setup, modulo newline encoding. This deployment branch only adds Render configuration, documentation, CI and ignore rules. Existing website behavior and recovered phone workflows are unchanged. The prior `main` branch and the main Jazz project are untouched. This Neon staging documentation update is isolated on its own feature branch and does not alter the existing website behavior.
+
+
+## Local development (website + PostgreSQL API)
+
+The local runner is `scripts/run-local.ps1`. It uses this website branch and the compatible PostgreSQL API branch `feature/per-user-trial-subscription-ledger-latest-20261025`.
+
+1. Keep this website checkout and your existing folders as they are. The runner creates a separate clean API checkout named `jazz-recovery-server-subscription-local`; it does not switch, reset, or overwrite your existing server folder.
+2. Run `scripts/run-local.ps1` from this website checkout. On first run, it clones the compatible API branch, creates its `.env` from `.env.local.example`, and stops.
+3. Configure the new API checkout's `.env` with a dedicated, isolated PostgreSQL/Neon branch and required private credentials. Do not use the live production database for local development or tests.
+4. Run `scripts/run-local.ps1` again. It installs dependencies when needed, starts the API in a separate PowerShell window, and runs the website at `http://localhost:5190`.
+
+Requirements: Git for Windows and Node.js 22.5+ with npm. The API uses PostgreSQL only; it refuses to start without `DATABASE_URL`. The runner does not apply destructive tests, alter existing checkouts, or copy an existing `.env` file.
