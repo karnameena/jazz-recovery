@@ -271,7 +271,7 @@ class RecoveryAgentService : Service() {
         }
 
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        val providers = runCatching { lm.getProviders(true) }.getOrDefault(emptyList())
+        val providers: List<String> = try { lm.getProviders(true) } catch (_: Exception) { emptyList() }
         if (providers.isEmpty()) {
             return JSONObject().put("ok", false).put("error", "NO_ENABLED_LOCATION_PROVIDER")
         }
