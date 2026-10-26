@@ -311,7 +311,8 @@ class MainActivity : Activity() {
         addText(developer, "Developed by", 18f, muted, false, Gravity.CENTER, bottom = 8)
         val name = TextView(this).apply {
             text = "GUNAKARNA"; textSize = 27f; typeface = Typeface.create("sans-serif", Typeface.BOLD_ITALIC)
-            setTextColor(cyan); gravity = Gravity.CENTER        }
+            setTextColor(cyan); gravity = Gravity.CENTER
+        }
         developer.addView(name)
         val underline = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(cyan, blue, purple)).apply { cornerRadius = dp(4).toFloat() } }
         developer.addView(underline, LinearLayout.LayoutParams(dp(126), dp(3)).apply { topMargin = dp(9); bottomMargin = dp(15) })
@@ -610,7 +611,8 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             toast("Grant foreground location permission first")
-            requestLocationPermission()            return
+            requestLocationPermission()
+            return
         }
         if (Build.VERSION.SDK_INT == 29) {
             if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
