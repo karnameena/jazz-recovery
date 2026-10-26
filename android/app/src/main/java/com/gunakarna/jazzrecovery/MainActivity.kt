@@ -114,14 +114,21 @@ class MainActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
                 show("Allow notifications, then tap Enable Recovery Readiness again")
             } else {
-                val intent = Intent(this, RecoveryAgentService::class.java)
+                prefs.edit().putBoolean("auto_start", true).apply()
+                val intent = Intent(this, RecoveryAgentService::class.java).putExtra("owner_start", true)
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
-                show("Recovery readiness started. Keep the ongoing notification enabled.")
+                show(if (Build.VERSION.SDK_INT >= 29 &&
+                    checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    "Recovery readiness started. For location after reboot, tap Allow Background Location and choose Allow all the time."
+                } else {
+                    "Recovery readiness started. Keep the ongoing notification enabled."
+                })
             }
         }
         action("Stop Recovery Readiness") {
+            prefs.edit().putBoolean("auto_start", false).apply()
             stopService(Intent(this, RecoveryAgentService::class.java))
-            show("Recovery readiness stopped")
+            show("Recovery readiness stopped; automatic restart disabled")
         }
         label("Device: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
         action("Grant Camera Permission") {
@@ -133,6 +140,31 @@ class MainActivity : Activity() {
             if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 100)
             } else show("Location permission is already granted")
+        }
+        action("Disable Battery Optimization for Recovery") {
+            if (Build.VERSION.SDK_INT >= 23) {
+                val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                if (power.isIgnoringBatteryOptimizations(packageName)) {
+                    show("Battery optimization is already disabled for Jazz Recovery")
+                } else {
+                    try {
+                        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(android.net.Uri.parse("package:$packageName")))
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                }
+            } else show("Battery optimization exemption is not needed on this Android version")
+        }
+        action("Allow Background Location (needed after reboot)") {
+            if (Build.VERSION.SDK_INT >= 29 &&
+                checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                show("In App info, open Permissions > Location and choose Allow all the time, then return to Jazz Recovery.")
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(android.net.Uri.parse("package:$packageName")))
+            } else {
+                show("Background location permission is already granted")
+            }
         }
         action("Grant Bluetooth Permission / Setup") {
             if (Build.VERSION.SDK_INT >= 31) {
