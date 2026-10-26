@@ -33,8 +33,15 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var server: EditText
     private lateinit var tokenDisplay: EditText
-    private val deviceId by lazy {
-        prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
+    private lateinit var idDisplay: EditText
+    private lateinit var repairUsername: EditText
+    private lateinit var repairPassword: EditText
+    private lateinit var registeredDeviceId: EditText
+    private lateinit var repairDeviceName: EditText
+    private lateinit var repairImei: EditText
+
+    private fun currentDeviceId(): String {
+        return prefs.getString("device_id", null) ?: ("jazz-recovery-" + UUID.randomUUID()).also {
             prefs.edit().putString("device_id", it).apply()
         }
     }
@@ -58,7 +65,7 @@ class MainActivity : Activity() {
             text = name; setOnClickListener { run() }
         }) }
         label("JAZZ RECOVERY · v1.0.0")
-        label("Independent device ID: $deviceId")
+        label("Current device ID (use the existing website ID when reconnecting): ${currentDeviceId()}")
         label("Server setup")
         server = field("https://server.example.com", prefs.getString("server", "") ?: "")
         action("Save HTTPS URL") {
@@ -68,12 +75,21 @@ class MainActivity : Activity() {
             else { prefs.edit().putString("server", value).apply(); show("Server URL saved") }
         }
         action("Test /health") { request("GET", "/health", null, false) }
+
+        label("Reconnect an existing website device")
+        label("Enter the exact registered Device ID from your website dashboard. This repairs the existing record; it does not create a new account or device.")
+        repairUsername = field("Existing website username", prefs.getString("account_username", "") ?: "")
+        repairPassword = field("Existing website password", "").apply { inputType = 129 }
+        registeredDeviceId = field("Exact registered website Device ID", "")
+        repairDeviceName = field("Device name", "${Build.MANUFACTURER} ${Build.MODEL}")
+        repairImei = field("IMEI (optional)", "")
+        action("Reconnect existing device") { repairExistingDevice() }
         label("Pair this app from the Jazz Recovery website")
         label("Copy both values below into the website registration form. The token is stored encrypted with Android Keystore.")
         label("Device ID")
-        val idDisplay = field("Device ID", deviceId)
+        idDisplay = field("Current device ID", currentDeviceId())
         idDisplay.isFocusable = false
-        action("Copy Device ID") { copyText(deviceId); show("Device ID copied") }
+        action("Copy Device ID") { copyText(currentDeviceId()); show("Device ID copied") }
         label("One-time device token")
         tokenDisplay = field("Generate a token before website registration", "")
         tokenDisplay.inputType = 129
@@ -98,7 +114,7 @@ class MainActivity : Activity() {
         }
         action("Send device heartbeat") {
             val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
-            val data = JSONObject().put("deviceId", deviceId).put("deviceName", Build.MODEL)
+            val data = JSONObject().put("deviceId", currentDeviceId()).put("deviceName", Build.MODEL)
                 .put("mode", "NORMAL_MODE")
                 .put("status", JSONObject().put("online", true)
                     .put("battery", bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY))
@@ -155,6 +171,84 @@ class MainActivity : Activity() {
         status = TextView(this).apply { text = "Not connected"; textSize = 15f; setTextColor(Color.CYAN) }
         root.addView(status)
     }
+    private fun repairExistingDevice() {
+        val base = (prefs.getString("server", "") ?: "").trim().trimEnd('/')
+        val username = repairUsername.text.toString().trim()
+        val password = repairPassword.text.toString()
+        val targetDeviceId = registeredDeviceId.text.toString().trim()
+        val deviceName = repairDeviceName.text.toString().trim()
+        val imei = repairImei.text.toString().trim()
+
+        if (!base.startsWith("https://")) { show("Save the HTTPS server URL first"); return }
+        if (username.isBlank() || password.isBlank()) { show("Enter your existing website username and password"); return }
+        if (!targetDeviceId.matches(Regex("^[A-Za-z0-9._:-]{3,120}$"))) {
+            show("Enter the exact registered Device ID from the website"); return
+        }
+        if (deviceName.length > 80 || (imei.isNotEmpty() && !imei.matches(Regex("^\\d{14,20}$")))) {
+            show("Device name or IMEI is invalid"); return
+        }
+
+        val randomBytes = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val newToken = Base64.encodeToString(
+            randomBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        val body = JSONObject()
+            .put("username", username)
+            .put("password", password)
+            .put("deviceId", targetDeviceId)
+            .put("deviceToken", newToken)
+            .put("deviceName", deviceName)
+            .put("imei", imei)
+
+        show("Reconnecting existing device securely...")
+        Thread {
+            var message: String
+            var succeeded = false
+            try {
+                val conn = URL("$base/api/auth/device-repair").openConnection() as HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    val responseText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(800) } ?: ""
+                    val response = runCatching { JSONObject(responseText) }.getOrNull()
+                    if (code in 200..299 && response?.optBoolean("ok", false) == true) {
+                        prefs.edit()
+                            .putString("device_id", targetDeviceId)
+                            .putString("secret", encrypt(newToken))
+                            .putString("server", base)
+                            .putString("account_username", response.optString("username", username))
+                            .apply()
+                        succeeded = true
+                        message = "Existing device reconnected. Its device record and recovery history were preserved."
+                    } else {
+                        message = "Reconnect failed (HTTP $code): " +
+                            (response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Check the existing account and registered device ID.")
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (failure: Exception) {
+                message = "Reconnect failed: ${failure.javaClass.simpleName}"
+            }
+            runOnUiThread {
+                show(message)
+                repairPassword.setText("")
+                if (succeeded) {
+                    idDisplay.setText(targetDeviceId)
+                    tokenDisplay.setText("")
+                    show("Existing device reconnected. Tap Enable Recovery Readiness to resume uploads.")
+                }
+            }
+        }.start()
+    }
+
     private fun show(value: String) { status.text = value }
     private fun copyText(value: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -193,7 +287,7 @@ class MainActivity : Activity() {
                     conn.instanceFollowRedirects = false
                     if (auth) {
                         conn.setRequestProperty("Authorization", "Bearer $secret")
-                        conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
+                        conn.setRequestProperty("X-Jazz-Lost-Device-Id", currentDeviceId())
                     }
                     if (data != null) {
                         conn.doOutput = true

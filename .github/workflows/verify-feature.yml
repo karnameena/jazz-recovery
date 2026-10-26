@@ -1,9 +1,9 @@
 name: Verify Jazz Recovery feature
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/recovery-enrollment-neon-20261020]
   push:
-    branches: [feature/recovery-enrollment-neon-20261020]
+    branches: [feature/recovery-enrollment-neon-20261020, fix/android-photo-capture-upload-reliability-20261026]
 permissions:
   contents: read
 jobs:
