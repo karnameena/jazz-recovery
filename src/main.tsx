@@ -721,45 +721,89 @@ function App() {
 
   useEffect(() => {
     const current = device;
+    let cancelled = false;
+    let pendingUrl = "";
+
     if (!current?.photo) {
       setPhotoLoadError("");
       setPhotoUrl((previous) => {
         if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
         return null;
       });
-      return;
+      return () => { cancelled = true; };
     }
-    if (current.photo.dataUrl) {
-      setPhotoLoadError("");
-      setPhotoUrl((previous) => {
-        if (previous?.url.startsWith("blob:") && previous.url !== current.photo?.dataUrl) URL.revokeObjectURL(previous.url);
-        return { deviceId: current.id, url: current.photo.dataUrl };
-      });
-      return;
-    }
-    let cancelled = false;
+
+    // Always load the authoritative current photo from the authenticated PostgreSQL
+    // photo-content route. Do not trust an inline data URL that may be stale or partial.
     setPhotoLoadError("");
-    fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, { credentials: "include", cache: "no-store" })
+    fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "image/jpeg, image/png" },
+    })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Photo request failed (${response.status})`);
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          throw new Error(detail || `Photo request failed (${response.status})`);
+        }
         const blob = await response.blob();
-        if (!blob.type.startsWith("image/")) throw new Error("The saved photo response was not an image.");
-        const url = URL.createObjectURL(blob);
-        if (cancelled) { URL.revokeObjectURL(url); return; }
+        if (!/^image\/(jpeg|png)$/i.test(blob.type)) {
+          throw new Error("The saved photo response was not a JPEG or PNG image.");
+        }
+        if (blob.size < 100) throw new Error("The saved photo file is empty or incomplete.");
+
+        pendingUrl = URL.createObjectURL(blob);
+        const probe = new Image();
+        probe.src = pendingUrl;
+        if (typeof probe.decode === "function") {
+          await probe.decode();
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            probe.onload = () => resolve();
+            probe.onerror = () => reject(new Error("The recovery photo could not be decoded."));
+          });
+        }
+        if (probe.naturalWidth < 1 || probe.naturalHeight < 1) {
+          throw new Error("The recovery photo has invalid image dimensions.");
+        }
+        if (cancelled) {
+          URL.revokeObjectURL(pendingUrl);
+          pendingUrl = "";
+          return;
+        }
+
+        const verifiedUrl = pendingUrl;
+        pendingUrl = "";
         setPhotoUrl((previous) => {
-          if (previous?.url.startsWith("blob:")) URL.revokeObjectURL(previous.url);
-          return { deviceId: current.id, url };
+          if (previous?.url.startsWith("blob:") && previous.url !== verifiedUrl) {
+            URL.revokeObjectURL(previous.url);
+          }
+          return { deviceId: current.id, url: verifiedUrl };
         });
       })
-      .catch(() => { if (!cancelled) setPhotoLoadError("The saved recovery photo could not be loaded. The server has retained the stored image."); });
-    return () => { cancelled = true; };
-  }, [device?.id, device?.photo?.timestamp, device?.photo?.camera, device?.photo?.dataUrl]);
+      .catch((error) => {
+        if (pendingUrl) {
+          URL.revokeObjectURL(pendingUrl);
+          pendingUrl = "";
+        }
+        if (!cancelled) {
+          const detail = error instanceof Error ? error.message : "unknown image error";
+          setPhotoLoadError(`The latest recovery photo could not be verified (${detail}). The previously displayed verified photo is retained.`);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+    };
+  }, [device?.id, device?.photo?.timestamp, device?.photo?.camera]);
 
   const onlineCount = useMemo(
     () => devices.filter((item) => item.online).length,
     [devices],
   );
-  const currentPhotoSrc = device?.photo?.dataUrl || (device && photoUrl?.deviceId === device.id ? photoUrl.url : "");
+  // Only render a blob URL after the image has been fetched and decoded successfully.
+  const currentPhotoSrc = device && photoUrl?.deviceId === device.id ? photoUrl.url : "";
 
   if (!ready)
     return (
@@ -1235,7 +1279,7 @@ function App() {
                   {device.photo ? (
                     <>
                       <div className="photo-frame">
-                        {currentPhotoSrc ? <img src={currentPhotoSrc} alt="Latest recovery" /> : <p role="status">Loading saved recovery photo…</p>}
+                        {currentPhotoSrc ? <img src={currentPhotoSrc} alt="Latest recovery" onError={() => setPhotoLoadError("The recovery photo failed to render. The previously displayed verified photo is retained.")} /> : <p role="status">{photoLoadError || "Loading and verifying saved recovery photo…"}</p>}
                       </div>
                       {photoLoadError && <p className="error-banner" role="status">{photoLoadError}</p>}
                       <div className="photo-meta">
