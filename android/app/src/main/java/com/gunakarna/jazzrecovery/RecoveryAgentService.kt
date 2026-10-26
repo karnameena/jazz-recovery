@@ -231,36 +231,16 @@ class RecoveryAgentService : Service() {
             if (!opened.await(6, TimeUnit.SECONDS)) return photoFailure("CAMERA_OPEN_TIMEOUT", camera, captureStartedAt)
             if (cameraDevice == null) return photoFailure(openError ?: "CAMERA_OPEN_FAILED", camera, captureStartedAt)
             val configured = CountDownLatch(1)
-        private fun request(method: String, url: String, token: String, deviceId: String, body: JSONObject?): JSONObject? {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        val isPhotoResult = url.contains("/android/device/commands/") && url.endsWith("/result") &&
-            !body?.optJSONObject("result")?.optString("imageBase64").isNullOrBlank()
-        try {
-            conn.requestMethod = method
-            conn.connectTimeout = if (isPhotoResult) 10000 else 5000
-            conn.readTimeout = if (isPhotoResult) 60000 else 8000
-            conn.instanceFollowRedirects = false
-            conn.setRequestProperty("Authorization", "Bearer " + token)
-            conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
-            if (body != null) {
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
-                val bytes = body.toString().toByteArray(Charsets.UTF_8)
-                conn.setFixedLengthStreamingMode(bytes.size)
-                conn.outputStream.use { it.write(bytes) }
-            }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText().take(4096) } ?: ""
-            if (code !in 200..299) {
-                Log.w("JazzRecoveryPhoto", "Server returned HTTP " + code + " for " + URL(url).path)
-                return null
-            }
-            return if (text.isNotBlank()) JSONObject(text) else JSONObject().put("ok", true)
-        } finally { conn.disconnect() }
-    }
-
-AILABLE) == true
+            cameraDevice!!.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(value: CameraCaptureSession) { session = value; configured.countDown() }
+                override fun onConfigureFailed(value: CameraCaptureSession) { sessionError = true; configured.countDown() }
+            }, handler)
+            if (!configured.await(6, TimeUnit.SECONDS)) return photoFailure("CAMERA_SESSION_TIMEOUT", camera, captureStartedAt)
+            if (session == null) return photoFailure(if (sessionError) "CAMERA_SESSION_CONFIG_FAILED" else "CAMERA_SESSION_FAILED", camera, captureStartedAt)
+            val aeModes = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES)?.toSet().orEmpty()
+            val afModes = characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)?.toSet().orEmpty()
+            val awbModes = characteristics.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)?.toSet().orEmpty()
+            val flashAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             val aeMode: Int? = when {
                 flashAvailable && aeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH) ->
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH
@@ -436,22 +416,30 @@ AILABLE) == true
 
     private fun request(method: String, url: String, token: String, deviceId: String, body: JSONObject?): JSONObject? {
         val conn = URL(url).openConnection() as HttpURLConnection
+        val isPhotoResult = url.contains("/android/device/commands/") && url.endsWith("/result") &&
+            !body?.optJSONObject("result")?.optString("imageBase64").isNullOrBlank()
         try {
             conn.requestMethod = method
-            conn.connectTimeout = 5000
-            conn.readTimeout = 8000
+            conn.connectTimeout = if (isPhotoResult) 10000 else 5000
+            conn.readTimeout = if (isPhotoResult) 60000 else 8000
             conn.instanceFollowRedirects = false
-            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Authorization", "Bearer " + token)
             conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val bytes = body.toString().toByteArray(Charsets.UTF_8)
+                conn.setFixedLengthStreamingMode(bytes.size)
+                conn.outputStream.use { it.write(bytes) }
             }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-            return if (code in 200..299 && text.isNotBlank()) JSONObject(text) else null
+            val text = stream?.bufferedReader()?.use { it.readText().take(4096) } ?: ""
+            if (code !in 200..299) {
+                Log.w("JazzRecoveryPhoto", "Server returned HTTP " + code + " for " + URL(url).path)
+                return null
+            }
+            return if (text.isNotBlank()) JSONObject(text) else JSONObject().put("ok", true)
         } finally { conn.disconnect() }
     }
 
