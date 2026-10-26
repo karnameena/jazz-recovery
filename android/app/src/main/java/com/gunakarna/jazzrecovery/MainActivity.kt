@@ -843,7 +843,76 @@ class MainActivity : Activity() {
     }
 
     private fun actionButton(parent: LinearLayout, title: String, trailing: String, action: () -> Unit) {
-        val button = Te    private fun request(method: String, path: String, data: JSONObject?, auth: Boolean) {
+        val button = TextView(this).apply {
+            text = "$title     $trailing"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(white)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(13), dp(14), dp(13))
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(14, 130, 210), Color.rgb(104, 67, 218))).apply {
+                cornerRadius = dp(13).toFloat()
+                setStroke(dp(1), Color.argb(180, Color.red(cyan), Color.green(cyan), Color.blue(cyan)))
+            }
+            isClickable = true; isFocusable = true
+            setOnClickListener { action() }
+        }
+        parent.addView(button, marginParams(top = 7, bottom = 3))
+    }
+
+    private fun addDivider(parent: LinearLayout) {
+        parent.addView(View(this).apply { setBackgroundColor(Color.rgb(34, 54, 89)) }, LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(10); bottomMargin = dp(10) })
+    }
+
+    private fun textField(hint: String, value: String): EditText = EditText(this).apply {
+        this.hint = hint
+        setText(value)
+        setTextColor(white)
+        setHintTextColor(muted)
+        textSize = 13f
+        setSingleLine(true)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = shape(Color.rgb(7, 15, 33), 12, Color.rgb(38, 79, 128), 1)
+    }
+
+    private fun addText(
+        parent: LinearLayout, value: String, size: Float, color: Int, bold: Boolean = false,
+        gravity: Int = Gravity.START, top: Int = 0, bottom: Int = 0
+    ) {
+        val view = TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            if (bold) typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            this.gravity = gravity
+            setPadding(0, dp(top), 0, dp(bottom))
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
+        parent.addView(view, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun shape(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int, glow: Boolean = false, topOnly: Boolean = false): GradientDrawable {
+        val drawable = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+            if (strokeWidth > 0) setStroke(dp(strokeWidth), strokeColor)
+        }
+        return drawable
+    }
+
+    private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top); bottomMargin = dp(bottom) }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun copyText(value: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Jazz Recovery", value))
+    }
+
+    private fun toast(value: String) = Toast.makeText(this, value, Toast.LENGTH_LONG).show()
+
+    private fun request(method: String, path: String, data: JSONObject?, auth: Boolean) {
         val base = prefs.getString("server", "") ?: ""
         if (!validHttpsUrl(base)) { toast("Configure a valid HTTPS server first"); return }
         val secret = if (auth) runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull() else null
@@ -890,65 +959,6 @@ class MainActivity : Activity() {
                     }
                 } finally { conn.disconnect() }
             } catch (e: Exception) { "Connection failed: " + e.javaClass.simpleName }
-            runOnUiThread { if (::status.isInitialized) status.text = message }
-        }.start()
-    }
-
-m))
-            setLineSpacing(dp(2).toFloat(), 1f)
-        }
-        parent.addView(view, LinearLayout.LayoutParams(-1, -2))
-    }
-
-    private fun shape(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int, glow: Boolean = false, topOnly: Boolean = false): GradientDrawable {
-        val drawable = GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-            if (strokeWidth > 0) setStroke(dp(strokeWidth), strokeColor)
-        }
-        return drawable
-    }
-
-    private fun marginParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(top); bottomMargin = dp(bottom) }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun copyText(value: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Jazz Recovery", value))
-    }
-
-    private fun toast(value: String) = Toast.makeText(this, value, Toast.LENGTH_LONG).show()
-
-    private fun request(method: String, path: String, data: JSONObject?, auth: Boolean) {
-        val base = prefs.getString("server", "") ?: ""
-        if (!validHttpsUrl(base)) { toast("Configure a valid HTTPS server first"); return }
-        val secret = if (auth) runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull() else null
-        if (auth && secret.isNullOrBlank()) { toast("Generate and securely save the device token first"); return }
-        status.text = "Connecting…"
-        Thread {
-            val message = try {
-                val conn = URL(base.trimEnd('/') + path).openConnection() as HttpURLConnection
-                try {
-                    conn.requestMethod = method
-                    conn.connectTimeout = 8000
-                    conn.readTimeout = 12000
-                    conn.instanceFollowRedirects = false
-                    if (auth) {
-                        conn.setRequestProperty("Authorization", "Bearer $secret")
-                        conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
-                    }
-                    if (data != null) {
-                        conn.doOutput = true
-                        conn.setRequestProperty("Content-Type", "application/json")
-                        conn.outputStream.use { it.write(data.toString().toByteArray(Charsets.UTF_8)) }
-                    }
-                    val code = conn.responseCode
-                    val response = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText().take(400) } ?: ""
-                    "HTTP $code: $response"
-                } finally { conn.disconnect() }
-            } catch (e: Exception) { "Connection failed: ${e.javaClass.simpleName}" }
             runOnUiThread { if (::status.isInitialized) status.text = message }
         }.start()
     }
