@@ -75,6 +75,9 @@ class MainActivity : Activity() {
         val existingUsername = field("Existing account username", "")
         val existingPassword = field("Existing account password", "").apply { inputType = 129 }
         val existingDeviceId = field("Original registered Device ID", "")
+        action("Sign In to Existing Account") {
+            loginAccount(existingUsername.text.toString().trim(), existingPassword.text.toString())
+        }
         action("Restore Existing Device") {
             repairExistingDevice(
                 existingUsername.text.toString().trim(),
@@ -198,6 +201,73 @@ class MainActivity : Activity() {
         }
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)))
     }
+    private fun loginAccount(username: String, password: String) {
+        val base = (prefs.getString("server", "") ?: "").trim().trimEnd('/')
+        if (!base.startsWith("https://") || runCatching { URL(base).host.isBlank() }.getOrDefault(true)) {
+            show("Save a valid HTTPS recovery server URL first")
+            return
+        }
+        if (username.isBlank() || username.length > 64 || password.isBlank() || password.length > 512) {
+            show("Enter your existing username and password")
+            return
+        }
+        show("Signing in to your existing account…")
+        Thread {
+            var message: String
+            var signedIn = false
+            try {
+                val conn = URL("$base/api/auth/login").openConnection() as HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    conn.setRequestProperty("Accept", "application/json")
+                    conn.doOutput = true
+                    val body = JSONObject().put("username", username).put("password", password)
+                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    val responseText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(1600) } ?: ""
+                    val response = runCatching { JSONObject(responseText) }.getOrNull()
+                    if (code in 200..299 && response?.optBoolean("ok", false) == true) {
+                        val cookieHeader = conn.getHeaderField("Set-Cookie")
+                            ?: conn.headerFields.entries.firstOrNull { it.key?.equals("Set-Cookie", true) == true }?.value?.firstOrNull()
+                        val cookiePair = cookieHeader?.substringBefore(';')?.trim()
+                        if (!cookiePair.isNullOrBlank() && cookiePair.contains('=')) {
+                            val saved = prefs.edit()
+                                .putString("account_username", response.optString("username", username))
+                                .putString("account_session_cookie", encrypt(cookiePair))
+                                .commit()
+                            if (saved) {
+                                signedIn = true
+                                message = "Account sign-in successful. Existing account verified; no new account was created."
+                            } else {
+                                message = "Account credentials verified, but the session could not be saved securely on this device."
+                            }
+                        } else {
+                            message = "Server accepted the credentials but did not return a session cookie. Check the deployed server response headers."
+                        }
+                    } else {
+                        val detail = response?.optString("error")?.takeIf { it.isNotBlank() }
+                            ?: "Check the account username, password, and saved server URL."
+                        message = when (code) {
+                            401 -> "Sign-in failed: username or password was rejected by the server."
+                            429 -> "Too many sign-in attempts. Wait before trying again."
+                            else -> "Sign-in failed (HTTP $code): $detail"
+                        }
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (failure: Exception) {
+                message = "Account sign-in connection failed (${failure.javaClass.simpleName}). Check the HTTPS server URL and connection."
+            }
+            runOnUiThread { show(message) }
+        }.start()
+    }
+
     private fun repairExistingDevice(
         username: String,
         password: String,
