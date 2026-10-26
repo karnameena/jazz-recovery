@@ -782,6 +782,10 @@ function App() {
         });
       })
       .catch((error) => {
+        if (pendingUrl) {
+          URL.revokeObjectURL(pendingUrl);
+          pendingUrl = "";
+        }
         if (!cancelled) {
           const detail = error instanceof Error ? error.message : "unknown image error";
           setPhotoLoadError(`The latest recovery photo could not be verified (${detail}). The previously displayed verified photo is retained.`);
@@ -798,7 +802,8 @@ function App() {
     () => devices.filter((item) => item.online).length,
     [devices],
   );
-  const currentPhotoSrc = device?.photo?.dataUrl || (device && photoUrl?.deviceId === device.id ? photoUrl.url : "");
+  // Only render a blob URL after the image has been fetched and decoded successfully.
+  const currentPhotoSrc = device && photoUrl?.deviceId === device.id ? photoUrl.url : "";
 
   if (!ready)
     return (
