@@ -204,7 +204,7 @@ class MainActivity : Activity() {
         originalDeviceId: String,
         clearFields: () -> Unit
     ) {
-        val base = (prefs.getString("server", "") ?: "").trim().trimEnd("/")
+        val base = (prefs.getString("server", "") ?: "").trim().trimEnd('/')
         if (!base.startsWith("https://") || runCatching { URL(base).host.isBlank() }.getOrDefault(true)) {
             show("Save a valid HTTPS recovery server URL first")
             return
