@@ -68,6 +68,16 @@ class MainActivity : Activity() {
             else { prefs.edit().putString("server", value).apply(); show("Server URL saved") }
         }
         action("Test /health") { request("GET", "/health", null, false) }
+
+        label("Existing Jazz Recovery account")
+        val accountUsername = field("Username", prefs.getString("account_username", "") ?: "")
+        val accountPassword = field("Password", "").apply { inputType = 129 }
+        action("Log in with existing account") {
+            loginAccount(accountUsername.text.toString().trim(), accountPassword.text.toString()) {
+                accountPassword.setText("")
+            }
+        }
+        label("Sign in with your existing account. This does not register a new account or device.")
         label("Pair this app from the Jazz Recovery website")
         label("Copy both values below into the website registration form. The token is stored encrypted with Android Keystore.")
         label("Device ID")
@@ -211,6 +221,63 @@ class MainActivity : Activity() {
         }
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)))
     }
+    private fun loginAccount(username: String, password: String, onSuccess: () -> Unit) {
+        val base = prefs.getString("server", "") ?: ""
+        if (!base.startsWith("https://")) {
+            show("Save the HTTPS server URL before logging in")
+            return
+        }
+        if (username.isBlank() || password.isBlank()) {
+            show("Enter your existing username and password")
+            return
+        }
+        show("Signing in...")
+        Thread {
+            var message: String
+            var success = false
+            try {
+                val conn = URL(base + "/api/auth/login").openConnection() as HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    val body = JSONObject().put("username", username).put("password", password)
+                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    val responseText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(2000) } ?: ""
+                    val response = runCatching { JSONObject(responseText) }.getOrNull()
+                    if (code in 200..299 && response?.optBoolean("ok", false) == true) {
+                        val cookiePair = conn.getHeaderField("Set-Cookie")?.substringBefore(';')?.trim()
+                        if (!cookiePair.isNullOrBlank() && cookiePair.contains('=')) {
+                            prefs.edit()
+                                .putString("account_username", response.optString("username", username))
+                                .putString("account_session_cookie", encrypt(cookiePair))
+                                .apply()
+                            success = true
+                            message = "Account login successful. Existing account verified; no new account was created."
+                        } else {
+                            message = "Login response did not include a session cookie. Check server cookie configuration."
+                        }
+                    } else {
+                        message = "Login failed (HTTP $code): " + (response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Check username, password, and server URL.")
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: Exception) {
+                message = "Login connection failed: ${e.javaClass.simpleName}"
+            }
+            runOnUiThread {
+                show(message)
+                if (success) onSuccess()
+            }
+        }.start()
+    }
+
     private fun request(method: String, path: String, data: JSONObject?, auth: Boolean) {
         val base = prefs.getString("server", "") ?: ""
         if (!base.startsWith("https://")) { show("Configure HTTPS server first"); return }
