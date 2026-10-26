@@ -447,10 +447,7 @@ function App() {
   useEffect(() => {
     if (!login || ((billingAccess !== "trial" && billingAccess !== "subscribed") && !isBillingAdmin)) return;
     const timer = window.setInterval(() => {
-      if (selected) {
-        void refresh(selected).catch(() => {});
-        void load().catch(() => {});
-      }
+      if (selected) void refresh(selected).catch(() => {});
       // Billing expiry is checked independently of device selection, so access
       // still closes on time even when an account has no currently selected device.
       void api("/api/billing/status").then(status => {
@@ -462,7 +459,16 @@ function App() {
         }
       }).catch(() => {});
     }, 10000);
-    return () => window.clearInterval(timer);
+    // Refresh the complete device list less frequently. The selected device is
+    // refreshed every 10 seconds above and photo commands have their own faster
+    // targeted polling; reloading every device during capture adds needless DB work.
+    const deviceListTimer = window.setInterval(() => {
+      if (selected) void load().catch(() => {});
+    }, 30000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(deviceListTimer);
+    };
   }, [login, billingAccess, selected, isBillingAdmin]);
 
   function isActionBusy(name: string, args: Record<string, unknown> = {}) {
@@ -496,40 +502,85 @@ function App() {
       setMsg(
         data.deduplicated
           ? "A matching recovery request is already queued. Waiting for the latest result…"
-          : "Recovery request sent. Waiting for the device…",
+          : name === "RECOVERY_PHOTO"
+            ? `Waiting for the phone's ${args.camera === "rear" ? "back" : "front"} camera and secure photo upload…`
+            : "Recovery request sent. Waiting for the device…",
       );
 
+      const isPhotoRequest = name === "RECOVERY_PHOTO";
+      // Allow enough time for Android camera startup plus upload, while command
+      // status polling exits promptly when capture/storage reports a result.
       const maxAttempts =
-        name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
+        name === "GET_LOCATION" ? 30 : isPhotoRequest ? 90 : 10;
+      let completed = false;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 650));
+        // Fast initial checks make completed captures appear quickly; a small
+        // backoff then avoids hammering PostgreSQL while Android is capturing.
+        const delayMs = isPhotoRequest
+          ? Math.min(1000, 350 + attempts * 75)
+          : name === "GET_LOCATION" ? 650 : 650;
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
-        if (attempts % 3 === 0) void load().catch(() => {});
+
+        // The server exposes the command's real completion result. This avoids
+        // leaving the user waiting through every poll when camera capture or
+        // private-storage upload has already failed.
+        if (isPhotoRequest && data.commandId) {
+          const commandStatus = await api(
+            `/api/devices/${selectedAtStart}/commands/${data.commandId}`,
+          ).catch(() => null);
+          if (commandStatus?.status === "FAILED" || commandStatus?.status === "EXPIRED") {
+            const reason = String(commandStatus?.result?.error || "");
+            setMsg(reason
+              ? `Photo request failed: ${reason}. The previous saved photo was not replaced.`
+              : "Photo request failed before a new photo was saved. The previous saved photo was not replaced.");
+            completed = true;
+            break;
+          }
+          if (commandStatus?.status === "COMPLETED") {
+            const wanted = args.camera === "rear" ? "rear" : "front";
+            const now = `${latest.photo?.camera ?? ""}:${String(latest.photo?.timestamp ?? "")}`;
+            if (latest.photo?.camera === wanted && now !== beforePhoto) {
+              setMsg(`${wanted === "rear" ? "Back" : "Front"} camera photo saved. Updating preview…`);
+              completed = true;
+              break;
+            }
+          }
+        }
 
         if (name === "GET_LOCATION") {
           const now = String(latest.location?.timestamp ?? "");
           if (now && now !== beforeLocation) {
             setMsg("Latest location received and map updated.");
+            completed = true;
             break;
           }
-        } else if (name === "RECOVERY_PHOTO") {
+        } else if (isPhotoRequest) {
           const wanted = args.camera === "rear" ? "rear" : "front";
           const now = `${latest.photo?.camera ?? ""}:${String(latest.photo?.timestamp ?? "")}`;
           if (latest.photo?.camera === wanted && now !== beforePhoto) {
             setMsg(
-              `${wanted === "rear" ? "Back" : "Front"} camera recovery photo updated.`,
+              `${wanted === "rear" ? "Back" : "Front"} camera photo saved. Updating preview…`,
             );
+            // Force the current-photo read after the server confirms a newer
+            // photo record, rather than waiting for the next periodic refresh.
+            await refresh(selectedAtStart).catch(() => null);
+            completed = true;
             break;
           }
         } else if (name === "SET_RECOVERY_MODE" && latest.mode !== beforeMode) {
           setMsg("Lost Mode state updated.");
+          completed = true;
           break;
-        } else if (attempts === maxAttempts - 1) {
-          setMsg(
-            "Recovery request sent. The page will continue refreshing automatically.",
-          );
         }
+      }
+      if (!completed) {
+        setMsg(isPhotoRequest
+          ? "No new photo was confirmed within the wait window. Check that the phone is online and Jazz Recovery has camera permission, then retry. The previous saved photo has not been replaced."
+          : name === "GET_LOCATION"
+            ? "No new location was confirmed yet. The page will keep showing the latest saved location."
+            : "Recovery request is still pending. Check the phone connection and try again."); 
       }
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "Action failed");
@@ -712,9 +763,16 @@ function App() {
     setPhotoLoadError("");
     fetch(`${API_BASE_URL}/api/devices/${current.id}/photo-content`, { credentials: "include", cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Photo request failed (${response.status})`);
+        if (!response.ok) {
+          const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+          const data = contentType.includes("application/json") ? await response.json().catch(() => ({})) : {};
+          if (response.status === 401) {
+            throw new Error("Your Jazz Recovery session is not valid. Sign in again, then reopen this device.");
+          }
+          throw new Error(data.error || `The saved recovery photo could not be loaded (HTTP ${response.status}). The existing photo record has not been deleted.`);
+        }
         const blob = await response.blob();
-        if (!blob.type.startsWith("image/")) throw new Error("The saved photo response was not an image.");
+        if (!blob.type.startsWith("image/")) throw new Error("The server returned an unexpected response instead of a recovery photo.");
         const url = URL.createObjectURL(blob);
         if (cancelled) { URL.revokeObjectURL(url); return; }
         setPhotoUrl((previous) => {
@@ -722,7 +780,11 @@ function App() {
           return { deviceId: current.id, url };
         });
       })
-      .catch(() => { if (!cancelled) setPhotoLoadError("The saved recovery photo could not be loaded. The server has retained the stored image."); });
+      .catch((error) => {
+        if (!cancelled) setPhotoLoadError(error instanceof Error
+          ? error.message
+          : "The saved recovery photo could not be loaded. The existing photo record has not been deleted.");
+      });
     return () => { cancelled = true; };
   }, [device?.id, device?.photo?.timestamp, device?.photo?.camera, device?.photo?.dataUrl]);
 
