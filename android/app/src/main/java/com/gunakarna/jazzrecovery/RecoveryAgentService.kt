@@ -36,6 +36,7 @@ import javax.crypto.spec.GCMParameterSpec
 class RecoveryAgentService : Service() {
     @Volatile private var running = false
     @Volatile private var cameraReadyForRemoteCapture = false
+    private var wakeLock: PowerManager.WakeLock? = null
     private var worker: Thread? = null
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
     private val channelId = "jazz_recovery_ready"
@@ -74,6 +75,14 @@ class RecoveryAgentService : Service() {
         } else {
             startForeground(42, notification)
         }
+        if (wakeLock?.isHeld != true) {
+            wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:RecoveryAgent")
+                .apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+        }
         if (!running) {
             running = true
             worker = Thread { loop() }.also { it.name = "JazzRecoveryAgent"; it.start() }
@@ -85,6 +94,8 @@ class RecoveryAgentService : Service() {
         running = false
         worker?.interrupt()
         worker = null
+        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+        wakeLock = null
         super.onDestroy()
     }
 
@@ -111,8 +122,8 @@ class RecoveryAgentService : Service() {
                             .put("mode", if (prefs.getBoolean("lost_mode", false)) "LOST_MODE" else "NORMAL_MODE")
                             .put("status", JSONObject()
                                 .put("battery", (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
-                                .put("charging", false)
-                                .put("network", "CONNECTED")
+                                .put("charging", (getSystemService(BATTERY_SERVICE) as BatteryManager).isCharging)
+                                .put("network", networkState())
                                 .put("locationServices", locationState())))
                         lastHeartbeat = System.currentTimeMillis()
                     }
@@ -136,7 +147,7 @@ class RecoveryAgentService : Service() {
             when (type) {
                 "device_status" -> JSONObject().put("ok", true).put("mode", if (prefs.getBoolean("lost_mode", false)) "LOST_MODE" else "NORMAL_MODE")
                     .put("status", JSONObject().put("battery", (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
-                        .put("network", "CONNECTED").put("locationServices", locationState()))
+                        .put("network", networkState()).put("locationServices", locationState()))
                 "device_location" -> getLocation()
                 "recovery_photo" -> if (cameraReadyForRemoteCapture) {
                     capturePhoto(if (args.optString("camera") == "rear") "rear" else "front")
@@ -232,6 +243,17 @@ class RecoveryAgentService : Service() {
                 return
             }
         }
+    }
+
+    private fun networkState(): String {
+        return try {
+            val manager = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val network = manager.activeNetwork ?: return "DISCONNECTED"
+            val capabilities = manager.getNetworkCapabilities(network) ?: return "DISCONNECTED"
+            if (capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) "CONNECTED"
+            else "DISCONNECTED"
+        } catch (_: Exception) { "UNKNOWN" }
     }
 
     private fun locationState(): String {
