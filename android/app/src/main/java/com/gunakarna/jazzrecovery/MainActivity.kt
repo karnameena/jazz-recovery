@@ -141,6 +141,21 @@ class MainActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 100)
             } else show("Location permission is already granted")
         }
+        action("Disable Battery Optimization for Recovery") {
+            if (Build.VERSION.SDK_INT >= 23) {
+                val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                if (power.isIgnoringBatteryOptimizations(packageName)) {
+                    show("Battery optimization is already disabled for Jazz Recovery")
+                } else {
+                    try {
+                        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(android.net.Uri.parse("package:$packageName")))
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                }
+            } else show("Battery optimization exemption is not needed on this Android version")
+        }
         action("Allow Background Location (needed after reboot)") {
             if (Build.VERSION.SDK_INT >= 29 &&
                 checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
