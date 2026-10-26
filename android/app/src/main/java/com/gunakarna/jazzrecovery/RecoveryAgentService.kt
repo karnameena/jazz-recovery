@@ -10,6 +10,8 @@ import android.graphics.BitmapFactory
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.*
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.Manifest
 import android.util.Base64
@@ -33,6 +35,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 class RecoveryAgentService : Service() {
     @Volatile private var running = false
+    @Volatile private var cameraReadyForRemoteCapture = false
     private var worker: Thread? = null
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
     private val channelId = "jazz_recovery_ready"
@@ -47,15 +50,27 @@ class RecoveryAgentService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val bootStart = intent?.getBooleanExtra("boot_start", false) == true
+        val ownerStart = intent?.getBooleanExtra("owner_start", false) == true
+        if (ownerStart) cameraReadyForRemoteCapture = true
+        else if (bootStart || intent == null) cameraReadyForRemoteCapture = false
+
         val notification = Notification.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("Jazz Recovery is ready")
-            .setContentText("Owner-enabled recovery connection is active")
+            .setContentText(if (cameraReadyForRemoteCapture)
+                "Recovery connection active; remote camera is enabled"
+                else "Recovery connection active; open the app to enable remote camera")
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(42, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+            val foregroundTypes = if (cameraReadyForRemoteCapture) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            startForeground(42, notification, foregroundTypes)
         } else {
             startForeground(42, notification)
         }
@@ -123,7 +138,12 @@ class RecoveryAgentService : Service() {
                     .put("status", JSONObject().put("battery", (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
                         .put("network", "CONNECTED").put("locationServices", locationState()))
                 "device_location" -> getLocation()
-                "recovery_photo" -> capturePhoto(if (args.optString("camera") == "rear") "rear" else "front")
+                "recovery_photo" -> if (cameraReadyForRemoteCapture) {
+                    capturePhoto(if (args.optString("camera") == "rear") "rear" else "front")
+                } else {
+                    JSONObject().put("ok", false).put("status", "CAMERA_CAPTURE_OS_BLOCKED")
+                        .put("error", "Open Jazz Recovery and tap Enable Recovery Readiness after reboot to enable remote camera access")
+                }
                 "ring_device" -> ring(args.optLong("durationMs", 10000L))
                 "set_recovery_mode" -> {
                     val enabled = args.optBoolean("enabled", true)
@@ -222,16 +242,73 @@ class RecoveryAgentService : Service() {
     }
 
     private fun getLocation(): JSONObject {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) {
             return JSONObject().put("ok", false).put("error", "LOCATION_PERMISSION_REQUIRED")
         }
+
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        val loc = lm.getProviders(true).mapNotNull { provider ->
+        val providers = runCatching { lm.getProviders(true) }.getOrDefault(emptyList())
+        if (providers.isEmpty()) {
+            return JSONObject().put("ok", false).put("error", "NO_ENABLED_LOCATION_PROVIDER")
+        }
+
+        // Request a new provider fix for this command instead of treating cached
+        // coordinates as real-time. If providers cannot obtain a fresh fix, retain
+        // the last-known fallback and label it explicitly for the dashboard.
+        val thread = HandlerThread("JazzRecoveryLocation").apply { start() }
+        val firstFix = CountDownLatch(1)
+        val accurateFix = CountDownLatch(1)
+        val lock = Any()
+        var best: Location? = null
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                synchronized(lock) {
+                    val current = best
+                    if (current == null || location.time > current.time ||
+                        (location.time >= current.time - 5_000L && location.accuracy < current.accuracy)) {
+                        best = location
+                    }
+                }
+                firstFix.countDown()
+                if (location.accuracy <= 50f) accurateFix.countDown()
+            }
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Deprecated("Deprecated by Android")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+
+        try {
+            for (provider in providers) {
+                runCatching { lm.requestLocationUpdates(provider, 1_000L, 0f, listener, thread.looper) }
+            }
+            // Prefer an accurate fix, but don't wait indefinitely for GPS indoors.
+            firstFix.await(8, TimeUnit.SECONDS)
+            val current = synchronized(lock) { best }
+            if (current != null && current.accuracy > 50f) accurateFix.await(2, TimeUnit.SECONDS)
+        } catch (failure: SecurityException) {
+            return JSONObject().put("ok", false).put("error", "LOCATION_PERMISSION_REQUIRED")
+        } catch (failure: Exception) {
+            Log.w("JazzRecoveryLocation", "Fresh location request failed: " + failure.javaClass.simpleName)
+        } finally {
+            runCatching { lm.removeUpdates(listener) }
+            thread.quitSafely()
+        }
+
+        val fresh = synchronized(lock) { best }
+        val loc = fresh ?: providers.mapNotNull { provider ->
             runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
-        }.maxByOrNull { it.time } ?: return JSONObject().put("ok", false).put("error", "NO_CACHED_LOCATION")
-        return JSONObject().put("ok", true).put("latitude", loc.latitude).put("longitude", loc.longitude)
+        }.maxByOrNull { it.time }
+            ?: return JSONObject().put("ok", false).put("error", "NO_LOCATION_FIX_AVAILABLE")
+        val ageMs = (System.currentTimeMillis() - loc.time).coerceAtLeast(0L)
+        return JSONObject().put("ok", true)
+            .put("latitude", loc.latitude).put("longitude", loc.longitude)
             .put("accuracyMeters", loc.accuracy).put("timestamp", loc.time)
+            .put("provider", loc.provider ?: "unknown")
+            .put("isFresh", fresh != null).put("isStale", fresh == null)
+            .put("ageMs", ageMs)
     }
 
     private fun ring(duration: Long): JSONObject {
