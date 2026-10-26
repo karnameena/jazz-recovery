@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main, feature/recovery-enrollment-neon-20261020]
   push:
-    branches: [feature/recovery-enrollment-neon-20261020, fix/android-photo-capture-upload-reliability-20261026]
+    branches: [feature/recovery-enrollment-neon-20261020, fix/android-photo-capture-upload-reliability-20261026, fix/photo-upload-modular-frontend-20261026]
 permissions:
   contents: read
 jobs:
