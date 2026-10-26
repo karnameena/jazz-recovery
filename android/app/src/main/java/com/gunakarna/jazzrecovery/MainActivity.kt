@@ -8,6 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -144,18 +149,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(24), dp(12), dp(20))
             background = shape(panelAlt, 22, blue, 1, glow = true)
         }
-        val emblem = TextView(this).apply {
-            text = "J"
-            gravity = Gravity.CENTER
-            textSize = 58f
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(cyan, blue, purple)).apply {
-                shape = GradientDrawable.OVAL
-                setStroke(dp(3), Color.argb(180, 220, 248, 255))
-            }
-            elevation = dp(8).toFloat()
-        }
+        val emblem = ShieldEmblemView()
         hero.addView(emblem, LinearLayout.LayoutParams(dp(112), dp(112)))
         addText(hero, "YOUR DEVICE • YOUR DATA • YOUR CONTROL", 11f, cyan, true, Gravity.CENTER, top = 17, bottom = 2)
         content.addView(hero, marginParams(bottom = 18))
@@ -208,24 +202,44 @@ class MainActivity : Activity() {
 
     private fun featureCard(icon: String, title: String, subtitle: String, action: () -> Unit): View {
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(11), dp(10), dp(10))
-            background = shape(panel, 17, if (title == "Location" || title == "Camera") purple else blue, 1, glow = true)
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(10), dp(10))
+            background = shape(panel, 17, if (title == "Location" || title == "Camera") purple else blue, 1)
             isClickable = true
             isFocusable = true
             setOnClickListener { action() }
         }
-        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val iconView = TextView(this).apply {
-            text = icon; textSize = 22f; gravity = Gravity.CENTER; setTextColor(cyan)
-            background = shape(Color.rgb(17, 40, 76), 12, Color.argb(120, Color.red(cyan), Color.green(cyan), Color.blue(cyan)), 1)
+            text = icon
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(cyan)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(17, 40, 76), Color.rgb(9, 25, 54))
+            ).apply {
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.rgb(24, 103, 157))
+            }
         }
-        top.addView(iconView, LinearLayout.LayoutParams(dp(40), dp(40)))
-        val arrow = TextView(this).apply { text = "›"; textSize = 26f; setTextColor(cyan); gravity = Gravity.CENTER }
-        top.addView(arrow, LinearLayout.LayoutParams(dp(22), dp(40)))
-        card.addView(top)
-        addText(card, title, 14f, white, true, top = 9, bottom = 2)
-        addText(card, subtitle, 11f, muted, false)
+        card.addView(iconView, LinearLayout.LayoutParams(dp(56), dp(56)))
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(3), 0)
+        }
+        addText(labels, title, 14f, white, true, bottom = 3)
+        addText(labels, subtitle, 11f, muted, false)
+        card.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        val arrow = TextView(this).apply {
+            text = "›"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+            background = shape(Color.rgb(17, 48, 88), 24, Color.rgb(23, 71, 120), 1)
+        }
+        card.addView(arrow, LinearLayout.LayoutParams(dp(36), dp(36)))
         return card
     }
 
@@ -297,8 +311,7 @@ class MainActivity : Activity() {
         addText(developer, "Developed by", 18f, muted, false, Gravity.CENTER, bottom = 8)
         val name = TextView(this).apply {
             text = "GUNAKARNA"; textSize = 27f; typeface = Typeface.create("sans-serif", Typeface.BOLD_ITALIC)
-            setTextColor(cyan); gravity = Gravity.CENTER
-        }
+            setTextColor(cyan); gravity = Gravity.CENTER        }
         developer.addView(name)
         val underline = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(cyan, blue, purple)).apply { cornerRadius = dp(4).toFloat() } }
         developer.addView(underline, LinearLayout.LayoutParams(dp(126), dp(3)).apply { topMargin = dp(9); bottomMargin = dp(15) })
@@ -597,8 +610,7 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             toast("Grant foreground location permission first")
-            requestLocationPermission()
-            return
+            requestLocationPermission()            return
         }
         if (Build.VERSION.SDK_INT == 29) {
             if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -911,4 +923,48 @@ class MainActivity : Activity() {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12))) }
         return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     }
+    /** Decorative shield emblem for the Home hero; no recovery logic is attached to it. */
+    private inner class ShieldEmblemView : View(this@MainActivity) {
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val markPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val shield = Path().apply {
+                moveTo(w * 0.50f, h * 0.07f)
+                cubicTo(w * 0.66f, h * 0.15f, w * 0.80f, h * 0.17f, w * 0.87f, h * 0.20f)
+                lineTo(w * 0.84f, h * 0.54f)
+                cubicTo(w * 0.81f, h * 0.73f, w * 0.65f, h * 0.87f, w * 0.50f, h * 0.94f)
+                cubicTo(w * 0.35f, h * 0.87f, w * 0.19f, h * 0.73f, w * 0.16f, h * 0.54f)
+                lineTo(w * 0.13f, h * 0.20f)
+                cubicTo(w * 0.20f, h * 0.17f, w * 0.34f, h * 0.15f, w * 0.50f, h * 0.07f)
+                close()
+            }
+            fillPaint.style = Paint.Style.FILL
+            fillPaint.shader = LinearGradient(0f, 0f, w, h, intArrayOf(Color.rgb(22, 185, 255), blue, purple), null, Shader.TileMode.CLAMP)
+            canvas.drawPath(shield, fillPaint)
+            fillPaint.shader = null
+
+            edgePaint.style = Paint.Style.STROKE
+            edgePaint.strokeWidth = dp(2).toFloat()
+            edgePaint.color = Color.rgb(180, 238, 255)
+            canvas.drawPath(shield, edgePaint)
+
+            val check = Path().apply {
+                moveTo(w * 0.34f, h * 0.49f)
+                lineTo(w * 0.45f, h * 0.60f)
+                lineTo(w * 0.67f, h * 0.38f)
+            }
+            markPaint.style = Paint.Style.STROKE
+            markPaint.strokeWidth = dp(5).toFloat()
+            markPaint.strokeCap = Paint.Cap.ROUND
+            markPaint.strokeJoin = Paint.Join.ROUND
+            markPaint.color = Color.WHITE
+            canvas.drawPath(check, markPaint)
+        }
+    }
+
 }
