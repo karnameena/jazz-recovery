@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var server: EditText
     private lateinit var tokenDisplay: EditText
+    private lateinit var idDisplay: EditText
     private lateinit var repairUsername: EditText
     private lateinit var repairPassword: EditText
     private lateinit var registeredDeviceId: EditText
@@ -64,7 +65,7 @@ class MainActivity : Activity() {
             text = name; setOnClickListener { run() }
         }) }
         label("JAZZ RECOVERY · v1.0.0")
-        label("Independent device ID: $currentDeviceId()")
+        label("Current device ID (use the existing website ID when reconnecting): ${currentDeviceId()}")
         label("Server setup")
         server = field("https://server.example.com", prefs.getString("server", "") ?: "")
         action("Save HTTPS URL") {
@@ -86,7 +87,7 @@ class MainActivity : Activity() {
         label("Pair this app from the Jazz Recovery website")
         label("Copy both values below into the website registration form. The token is stored encrypted with Android Keystore.")
         label("Device ID")
-        val idDisplay = field("Device ID", deviceId)
+        idDisplay = field("Current device ID", currentDeviceId())
         idDisplay.isFocusable = false
         action("Copy Device ID") { copyText(currentDeviceId()); show("Device ID copied") }
         label("One-time device token")
@@ -240,6 +241,7 @@ class MainActivity : Activity() {
                 show(message)
                 repairPassword.setText("")
                 if (succeeded) {
+                    idDisplay.setText(targetDeviceId)
                     tokenDisplay.setText("")
                     show("Existing device reconnected. Tap Enable Recovery Readiness to resume uploads.")
                 }
