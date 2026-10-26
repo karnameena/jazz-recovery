@@ -493,6 +493,9 @@ function App() {
         method: "POST",
         body: JSON.stringify({ action: name, args }),
       });
+      if ((name === "RECOVERY_PHOTO" || name === "GET_LOCATION") && !data.commandId) {
+        throw new Error("The recovery server did not return a command ID. No result can be tracked safely.");
+      }
       setMsg(
         data.deduplicated
           ? "A matching recovery request is already queued. Waiting for the latest result…"
@@ -503,6 +506,32 @@ function App() {
         name === "GET_LOCATION" || name === "RECOVERY_PHOTO" ? 36 : 10;
       for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+        // Read the command outcome as well as the device snapshot. This lets the
+        // UI report camera/storage failures instead of silently polling forever.
+        if (name === "RECOVERY_PHOTO" && data.commandId) {
+          try {
+            const commandStatus = await api(
+              `/api/devices/${selectedAtStart}/commands/${encodeURIComponent(data.commandId)}`,
+            );
+            if (["FAILED", "EXPIRED"].includes(commandStatus.status)) {
+              const reason = commandStatus.result?.error || commandStatus.result?.status ||
+                (commandStatus.status === "EXPIRED" ? "The recovery request expired before upload completed." : "The server rejected the recovery photo.");
+              setMsg(`Photo upload failed: ${reason}. The previous verified photo is retained.`);
+              break;
+            }
+            if (commandStatus.status === "DEVICE_OFFLINE" && attempts % 5 === 0) {
+              setMsg("The phone is offline. The photo request is not confirmed; the previous verified photo is retained.");
+            }
+          } catch (statusError) {
+            if (attempts === 0) {
+              setMsg(statusError instanceof Error
+                ? `Photo status check failed: ${statusError.message}`
+                : "Photo status check failed. Verify the backend command-status route.");
+            }
+          }
+        }
+
         const latest = await refresh(selectedAtStart).catch(() => null);
         if (!latest) continue;
         if (attempts % 3 === 0) void load().catch(() => {});
