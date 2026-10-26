@@ -53,20 +53,31 @@ class RecoveryAgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val bootStart = intent?.getBooleanExtra("boot_start", false) == true
         val ownerStart = intent?.getBooleanExtra("owner_start", false) == true
-        if (ownerStart) cameraReadyForRemoteCapture = true
-        else if (bootStart || intent == null) cameraReadyForRemoteCapture = false
+
+        // Persist the owner's one-time camera authorization choice. After reboot or a
+        // system restart, keep attempting recovery commands, but start with the
+        // location service type only: Android can prohibit camera-FGS startup from
+        // BOOT_COMPLETED/background. A camera command must report a real failure if
+        // the OS blocks it; it must never be reported as a successful capture.
+        if (ownerStart) {
+            prefs.edit().putBoolean("camera_opt_in", true).putBoolean("auto_start", true).apply()
+            cameraReadyForRemoteCapture = true
+        } else {
+            cameraReadyForRemoteCapture = prefs.getBoolean("camera_opt_in", false)
+        }
+        val cameraForegroundAllowed = ownerStart && !bootStart
 
         val notification = Notification.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("Jazz Recovery is ready")
             .setContentText(if (cameraReadyForRemoteCapture)
-                "Recovery connection active; remote camera is enabled"
-                else "Recovery connection active; open the app to enable remote camera")
+                "Recovery agent active; camera authorization saved; remote capture is best-effort after restart"
+                else "Recovery agent active; enable camera authorization from the app")
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            val foregroundTypes = if (cameraReadyForRemoteCapture) {
+            val foregroundTypes = if (cameraForegroundAllowed) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             } else {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
@@ -246,14 +257,10 @@ class RecoveryAgentService : Service() {
     }
 
     private fun networkState(): String {
-        return try {
-            val manager = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            val network = manager.activeNetwork ?: return "DISCONNECTED"
-            val capabilities = manager.getNetworkCapabilities(network) ?: return "DISCONNECTED"
-            if (capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) "CONNECTED"
-            else "DISCONNECTED"
-        } catch (_: Exception) { "UNKNOWN" }
+        // Product requirement: do not expose or infer Wi-Fi vs cellular here.
+        // Keep the network label UNKNOWN; server reachability is measured by
+        // successful heartbeat/command HTTP responses, not by this display label.
+        return "UNKNOWN"
     }
 
     private fun locationState(): String {
