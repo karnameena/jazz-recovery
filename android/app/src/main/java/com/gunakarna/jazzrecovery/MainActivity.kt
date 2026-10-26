@@ -671,19 +671,43 @@ class MainActivity : Activity() {
         if (existingId.length !in 8..128 || !existingId.matches(Regex("[A-Za-z0-9._:-]+"))) {
             toast("Enter the existing device ID shown in your website device list"); return
         }
-        val newToken = try { getOrCreateDeviceToken() } catch (_: Exception) {
-            toast("Could not access the secure device token. Reinstalling may require generating a new token."); return
+
+        // Save a retryable token before contacting the server. If the server rotates the
+        // token but the response is lost, the next attempt reuses the same token.
+        val pendingId = prefs.getString("pending_repair_device_id", "") ?: ""
+        val pendingEncrypted = prefs.getString("pending_repair_token", "") ?: ""
+        val reusedToken = if (pendingId.equals(existingId, ignoreCase = true) && pendingEncrypted.isNotBlank()) {
+            runCatching { decrypt(pendingEncrypted) }.getOrNull()?.takeIf { it.isNotBlank() }
+        } else null
+        val newToken = reusedToken ?: Base64.encodeToString(
+            ByteArray(32).also { java.security.SecureRandom().nextBytes(it) },
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        val encryptedToken = try { encrypt(newToken) } catch (_: Exception) {
+            toast("Secure token storage failed; no repair request was sent")
+            return
         }
-        status.text = "Verifying account and repairing device…"
+        if (!prefs.edit()
+                .putString("pending_repair_device_id", existingId)
+                .putString("pending_repair_token", encryptedToken)
+                .commit()) {
+            toast("Could not safely save the pending token; no repair request was sent")
+            return
+        }
+
+        status.text = "Verifying account and restoring the existing device…"
         Thread {
-            val result = try {
-                val connection = (URL(base + "/api/auth/device-repair").openConnection() as HttpURLConnection)
+            var code = 0
+            var responseText = ""
+            var connectionError = ""
+            try {
+                val connection = URL(base + "/api/auth/device-repair").openConnection() as HttpURLConnection
                 try {
                     connection.requestMethod = "POST"
-                    connection.connectTimeout = 8000
-                    connection.readTimeout = 12000
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 20000
                     connection.instanceFollowRedirects = false
-                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     connection.setRequestProperty("Accept", "application/json")
                     connection.doOutput = true
                     val body = JSONObject()
@@ -691,24 +715,52 @@ class MainActivity : Activity() {
                         .put("password", password)
                         .put("deviceId", existingId)
                         .put("deviceToken", newToken)
-                        .put("deviceName", Build.MODEL)
+                        .put("deviceName", Build.MODEL.take(80))
                     connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                    val code = connection.responseCode
-                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
-                        ?.bufferedReader()?.use { it.readText().take(500) }.orEmpty()
-                    Pair(code, response)
+                    code = connection.responseCode
+                    responseText = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(2000) }.orEmpty()
                 } finally { connection.disconnect() }
-            } catch (e: Exception) { Pair(0, "Connection failed: " + e.javaClass.simpleName) }
+            } catch (failure: Exception) {
+                connectionError = "Connection failed: " + failure.javaClass.simpleName
+            }
+
+            val response = runCatching { JSONObject(responseText) }.getOrNull()
+            val repaired = code in 200..299 && response?.optBoolean("ok", false) == true
+            val canonicalId = response?.optString("deviceId", existingId)?.trim()?.ifBlank { existingId } ?: existingId
+            val serverError = response?.optString("error")?.takeIf { it.isNotBlank() }
+                ?: response?.optString("message")?.takeIf { it.isNotBlank() }
             runOnUiThread {
-                if (result.first in 200..299) {
-                    prefs.edit().putString("server", base).putString("device_id", existingId).apply()
-                    deviceId = existingId
-                    status.text = "Existing device repaired. Device history and recovery state are preserved."
-                    toast("Device re-paired successfully. Keep your new token private.")
-                    render(Screen.URL_TOKENS)
+                if (repaired) {
+                    val saved = prefs.edit()
+                        .putString("server", base)
+                        .putString("device_id", canonicalId)
+                        .putString("secret", encryptedToken)
+                        .remove("pending_repair_device_id")
+                        .remove("pending_repair_token")
+                        .commit()
+                    if (saved) {
+                        deviceId = canonicalId
+                        render(Screen.URL_TOKENS)
+                        if (::status.isInitialized) status.text = "Existing device restored. Device ID and recovery history preserved."
+                        toast("Existing device restored. Keep the new device token private.")
+                    } else {
+                        status.text = "Server restored the device, but local token save failed. Retry using the same account and Device ID."
+                        toast("Device token could not be saved securely. Retry the repair.")
+                    }
                 } else {
-                    status.text = "Device repair failed (HTTP " + result.first + "): " + result.second
-                    toast("Repair failed. Check username, password, device ID and server URL.")
+                    val detail = serverError ?: "Check the existing account credentials, Device ID, and server URL."
+                    val message = when {
+                        code == 0 -> connectionError.ifBlank { "Could not connect to the recovery server." }
+                        code == 401 -> "Repair failed: the server rejected the username or password."
+                        code == 404 -> "Device not found under this account. Use the original Device ID from the website."
+                        code == 409 -> detail
+                        code == 429 -> "Too many attempts. Wait before trying again."
+                        code in 200..299 -> "Server returned HTTP " + code + " but did not confirm device repair: " + detail
+                        else -> "Device repair failed (HTTP " + code + "): " + detail
+                    }
+                    status.text = message
+                    toast(message)
                 }
             }
         }.start()
@@ -875,7 +927,7 @@ class MainActivity : Activity() {
                     conn.readTimeout = 12000
                     conn.instanceFollowRedirects = false
                     if (auth) {
-                        conn.setRequestProperty("Authorization", "Bearer $secret")
+                        conn.setRequestProperty("Authorization", "Bearer " + secret)
                         conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
                     }
                     if (data != null) {
@@ -884,10 +936,29 @@ class MainActivity : Activity() {
                         conn.outputStream.use { it.write(data.toString().toByteArray(Charsets.UTF_8)) }
                     }
                     val code = conn.responseCode
-                    val response = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText().take(400) } ?: ""
-                    "HTTP $code: $response"
+                    val responseText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(1200) } ?: ""
+                    val response = runCatching { JSONObject(responseText) }.getOrNull()
+                    if (code in 200..299 && (response == null || !response.has("ok") || response.optBoolean("ok", false))) {
+                        when {
+                            path == "/health" -> "Server connection successful."
+                            path == "/android/device/heartbeat" -> "Device connected. Server accepted the heartbeat."
+                            else -> response?.optString("message")?.takeIf { it.isNotBlank() }
+                                ?: "Request completed successfully."
+                        }
+                    } else {
+                        val detail = response?.optString("error")?.takeIf { it.isNotBlank() }
+                            ?: response?.optString("message")?.takeIf { it.isNotBlank() }
+                            ?: "The server rejected the request."
+                        when (code) {
+                            401 -> "Device authentication failed. Restore the existing device with your account credentials."
+                            404 -> "Device or API endpoint not found. Check the registered Device ID and server URL."
+                            429 -> "Too many requests. Wait and try again."
+                            else -> "Request failed (HTTP " + code + "): " + detail
+                        }
+                    }
                 } finally { conn.disconnect() }
-            } catch (e: Exception) { "Connection failed: ${e.javaClass.simpleName}" }
+            } catch (e: Exception) { "Connection failed: " + e.javaClass.simpleName }
             runOnUiThread { if (::status.isInitialized) status.text = message }
         }.start()
     }

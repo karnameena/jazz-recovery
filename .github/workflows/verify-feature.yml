@@ -1,9 +1,9 @@
 name: Verify Jazz Recovery feature
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/location-control-support-icons-20261022]
   push:
-    branches: [feature/recovery-enrollment-neon-20261020]
+    branches: [feature/recovery-enrollment-neon-20261020, fix/android-full-app-photo-repair-20261027]
 permissions:
   contents: read
 jobs:
