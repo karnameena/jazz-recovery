@@ -885,7 +885,12 @@ class MainActivity : Activity() {
                     }
                     val code = conn.responseCode
                     val response = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText().take(400) } ?: ""
-                    "HTTP $code: $response"
+                    val acknowledgement = runCatching { JSONObject(response) }.getOrNull()
+                    when {
+                        code !in 200..299 -> "Heartbeat failed (HTTP $code)"
+                        acknowledgement?.optBoolean("ok", false) == true -> "Heartbeat successful — server acknowledged"
+                        else -> "Heartbeat not confirmed (HTTP $code)"
+                    }
                 } finally { conn.disconnect() }
             } catch (e: Exception) { "Connection failed: ${e.javaClass.simpleName}" }
             runOnUiThread { if (::status.isInitialized) status.text = message }
