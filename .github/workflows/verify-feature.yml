@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/recovery-enrollment-neon-20261020]
+    branches: [feature/recovery-enrollment-neon-20261020, repair/photo-heartbeat-20261027]
 permissions:
   contents: read
 jobs:
