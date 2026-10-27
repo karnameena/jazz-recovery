@@ -5,18 +5,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.*
 import android.location.LocationManager
 import android.Manifest
 import android.util.Base64
+import android.util.Log
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -31,6 +38,10 @@ class RecoveryAgentService : Service() {
     private var worker: Thread? = null
     private val prefs by lazy { getSharedPreferences("jazz_recovery_standalone", Context.MODE_PRIVATE) }
     private val channelId = "jazz_recovery_ready"
+    private val photoQueueDir by lazy { File(filesDir, "recovery-photo-pending") }
+    private val maxPhotoBytes = 5 * 1024 * 1024
+    private val jpegLongEdge = 2560
+    private val jpegQuality = 90
 
     override fun onCreate() {
         super.onCreate()
@@ -46,14 +57,7 @@ class RecoveryAgentService : Service() {
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            val hasForegroundLocation =
-                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            val hasBackgroundLocation = Build.VERSION.SDK_INT < 29 ||
-                checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                (if (hasForegroundLocation && hasBackgroundLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
-            startForeground(42, notification, types)
+            startForeground(42, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
         } else {
             startForeground(42, notification)
         }
@@ -89,7 +93,7 @@ class RecoveryAgentService : Service() {
                 val token = runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull().orEmpty()
                 if (base.startsWith("https://") && deviceId.isNotBlank() && token.length >= 32) {
                     if (System.currentTimeMillis() - lastHeartbeat >= 30_000) {
-                        post(base, "/android/device/heartbeat", token, deviceId, JSONObject()
+                        val heartbeat = request("POST", base + "/android/device/heartbeat", token, deviceId, JSONObject()
                             .put("deviceId", deviceId)
                             .put("mode", if (prefs.getBoolean("lost_mode", false)) "LOST_MODE" else "NORMAL_MODE")
                             .put("status", JSONObject()
@@ -97,13 +101,24 @@ class RecoveryAgentService : Service() {
                                 .put("charging", false)
                                 .put("network", "CONNECTED")
                                 .put("locationServices", locationState())))
-                        lastHeartbeat = System.currentTimeMillis()
+                        val heartbeatAttemptAt = System.currentTimeMillis()
+                        if (heartbeat?.optBoolean("ok", false) == true) {
+                            lastHeartbeat = heartbeatAttemptAt
+                            Log.i("JazzRecoveryHeartbeat", "Heartbeat acknowledged by server")
+                        } else {
+                            // Retry in about five seconds; do not mark an unacknowledged heartbeat as healthy.
+                            lastHeartbeat = heartbeatAttemptAt - 25_000
+                            Log.w("JazzRecoveryHeartbeat", "Heartbeat was not acknowledged by server")
+                        }
                     }
+                    retryPendingPhotoResults(base, token, deviceId)
                     val response = request("GET", base + "/android/device/commands/next", token, deviceId, null)
                     val command = response?.optJSONObject("command")
                     if (command != null) handleCommand(base, token, deviceId, command)
                 }
-            } catch (_: Exception) { /* Retry on next short poll; do not crash the foreground service. */ }
+            } catch (failure: Exception) {
+                Log.w("JazzRecoveryPhoto", "Agent loop recovered from " + failure.javaClass.simpleName)
+            }
             try { Thread.sleep(2500) } catch (_: InterruptedException) { break }
         }
     }
@@ -126,18 +141,94 @@ class RecoveryAgentService : Service() {
                     JSONObject().put("ok", true).put("mode", if (enabled) "LOST_MODE" else "NORMAL_MODE")
                 }
                 "location_status" -> JSONObject().put("ok", true).put("locationServices", locationState()).put("timestamp", System.currentTimeMillis())
-                "location_enable" -> GlobalLocationController.setEnabled(this, true).put("timestamp", System.currentTimeMillis())
-                "location_disable" -> GlobalLocationController.setEnabled(this, false).put("timestamp", System.currentTimeMillis())
+                "location_enable", "location_disable" -> JSONObject().put("ok", false).put("error", "ANDROID_PERMISSION_OR_DEVICE_OWNER_REQUIRED")
                 else -> JSONObject().put("ok", false).put("error", "UNSUPPORTED_COMMAND")
             }
-        } catch (e: Exception) {
-            JSONObject().put("ok", false).put("error", e.javaClass.simpleName)
+        } catch (failure: Exception) {
+            Log.w("JazzRecoveryPhoto", "Command handling failed type=" + type + " error=" + failure.javaClass.simpleName)
+            JSONObject().put("ok", false).put("status", "COMMAND_FAILED").put("error", "COMMAND_FAILED")
         }
-        post(base, "/android/device/commands/$id/result", token, deviceId, JSONObject().put("result", result))
+        val envelope = JSONObject().put("result", result)
+        if (type == "recovery_photo") {
+            if (!persistPhotoResult(id, envelope)) {
+                Log.e("JazzRecoveryPhoto", "Photo result could not be persisted command=" + id + "; upload skipped")
+                return
+            }
+            val startedAt = System.currentTimeMillis()
+            val response = runCatching {
+                request("POST", base + "/android/device/commands/$id/result", token, deviceId, envelope)
+            }.onFailure { failure ->
+                Log.w("JazzRecoveryPhoto", "Photo upload deferred command=" + id + " cause=" + failure.javaClass.simpleName)
+            }.getOrNull()
+            if (response?.optBoolean("ok", false) == true) {
+                deleteQueuedPhotoResult(id)
+                Log.i("JazzRecoveryPhoto", "Photo acknowledged command=" + id + " durationMs=" + (System.currentTimeMillis() - startedAt))
+            } else {
+                Log.w("JazzRecoveryPhoto", "Photo remains queued command=" + id)
+            }
+        } else {
+            post(base, "/android/device/commands/$id/result", token, deviceId, envelope)
+        }
+    }
+
+    private fun persistPhotoResult(commandId: String, envelope: JSONObject): Boolean {
+        return try {
+            if (!photoQueueDir.exists() && !photoQueueDir.mkdirs()) return false
+            val target = File(photoQueueDir, "$commandId.json")
+            if (target.isFile && target.length() > 0L) return true
+            val temporary = File(photoQueueDir, ".$commandId.${System.nanoTime()}.tmp")
+            FileOutputStream(temporary).use { stream ->
+                stream.write(envelope.toString().toByteArray(Charsets.UTF_8))
+                stream.fd.sync()
+            }
+            if (!temporary.renameTo(target)) {
+                if (!target.exists()) temporary.copyTo(target, overwrite = false)
+                temporary.delete()
+            }
+            target.isFile && target.length() > 0L
+        } catch (failure: Exception) {
+            Log.e("JazzRecoveryPhoto", "Photo queue write failed command=" + commandId + " cause=" + failure.javaClass.simpleName)
+            false
+        }
+    }
+
+    private fun deleteQueuedPhotoResult(commandId: String) {
+        runCatching { File(photoQueueDir, "$commandId.json").delete() }
+    }
+
+    private fun retryPendingPhotoResults(base: String, token: String, deviceId: String) {
+        if (!photoQueueDir.isDirectory) return
+        val pending = photoQueueDir.listFiles { file -> file.isFile && file.extension == "json" }
+            ?.sortedBy { it.lastModified() } ?: return
+        for (file in pending.take(2)) {
+            if (!running || Thread.currentThread().isInterrupted) return
+            val commandId = file.nameWithoutExtension
+            val envelope = try {
+                JSONObject(file.readText(Charsets.UTF_8))
+            } catch (failure: Exception) {
+                Log.e("JazzRecoveryPhoto", "Photo queue entry unreadable command=" + commandId)
+                continue
+            }
+            val startedAt = System.currentTimeMillis()
+            val response = runCatching {
+                request("POST", "$base/android/device/commands/$commandId/result", token, deviceId, envelope)
+            }.onFailure { failure ->
+                Log.w("JazzRecoveryPhoto", "Photo retry deferred command=" + commandId + " cause=" + failure.javaClass.simpleName)
+            }.getOrNull()
+            if (response?.optBoolean("ok", false) == true) {
+                deleteQueuedPhotoResult(commandId)
+                Log.i("JazzRecoveryPhoto", "Photo retry acknowledged command=" + commandId + " durationMs=" + (System.currentTimeMillis() - startedAt))
+            } else {
+                return
+            }
+        }
     }
 
     private fun locationState(): String {
-        return runCatching { if (GlobalLocationController.isEnabled(this)) "ON" else "OFF" }.getOrDefault("UNKNOWN")
+        return try {
+            val lm = getSystemService(LOCATION_SERVICE) as LocationManager
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) "ON" else "OFF"
+        } catch (_: Exception) { "UNKNOWN" }
     }
 
     private fun getLocation(): JSONObject {
@@ -163,60 +254,245 @@ class RecoveryAgentService : Service() {
     }
 
     private fun capturePhoto(camera: String): JSONObject {
+        val captureStartedAt = System.currentTimeMillis()
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            return JSONObject().put("ok", false).put("error", "CAMERA_PERMISSION_REQUIRED")
+            return photoFailure("CAMERA_PERMISSION_REQUIRED", camera, captureStartedAt)
         }
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         val targetFacing = if (camera == "rear") CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
-        val cameraId = manager.cameraIdList.firstOrNull { id ->
-            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == targetFacing
-        } ?: return JSONObject().put("ok", false).put("error", "CAMERA_NOT_AVAILABLE")
-        val size = manager.getCameraCharacteristics(cameraId).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            ?.getOutputSizes(android.graphics.ImageFormat.JPEG)?.minByOrNull { it.width * it.height }
-            ?: return JSONObject().put("ok", false).put("error", "JPEG_OUTPUT_UNAVAILABLE")
+        val cameraId = try {
+            manager.cameraIdList.firstOrNull { id ->
+                manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == targetFacing
+            }
+        } catch (failure: SecurityException) {
+            return photoFailure("CAMERA_PERMISSION_REVOKED", camera, captureStartedAt)
+        } catch (failure: Exception) {
+            return photoFailure("CAMERA_ENUMERATION_FAILED", camera, captureStartedAt, failure)
+        } ?: return photoFailure("CAMERA_NOT_AVAILABLE", camera, captureStartedAt)
+        val characteristics = try { manager.getCameraCharacteristics(cameraId) } catch (failure: Exception) {
+            return photoFailure("CAMERA_CHARACTERISTICS_FAILED", camera, captureStartedAt, failure)
+        }
+        val sizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?.getOutputSizes(android.graphics.ImageFormat.JPEG)
+            ?: return photoFailure("JPEG_OUTPUT_UNAVAILABLE", camera, captureStartedAt)
+        val size = sizes.filter { maxOf(it.width, it.height) <= 2560 }
+            .maxByOrNull { it.width.toLong() * it.height.toLong() }
+            ?: sizes.minByOrNull { it.width.toLong() * it.height.toLong() }
+            ?: return photoFailure("JPEG_OUTPUT_UNAVAILABLE", camera, captureStartedAt)
         val reader = ImageReader.newInstance(size.width, size.height, android.graphics.ImageFormat.JPEG, 2)
         val handlerThread = HandlerThread("JazzRecoveryCamera").apply { start() }
         val handler = Handler(handlerThread.looper)
-        val latch = CountDownLatch(1)
-        var imageBytes: ByteArray? = null
+        // Capture one frame at a time. The queue lets us discard unsettled 3A frames
+        // without accidentally treating a stale ImageReader buffer as the final photo.
+        val imageQueue = LinkedBlockingQueue<ByteArray>(2)
         var cameraDevice: CameraDevice? = null
         var session: CameraCaptureSession? = null
+        var openError: String? = null
+        var sessionError = false
         reader.setOnImageAvailableListener({ source ->
             source.acquireLatestImage()?.use { image ->
                 val buffer = image.planes[0].buffer
-                imageBytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
-                latch.countDown()
+                val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                if (!imageQueue.offer(bytes)) {
+                    imageQueue.poll()
+                    imageQueue.offer(bytes)
+                }
             }
         }, handler)
         try {
             val opened = CountDownLatch(1)
             manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) { cameraDevice = camera; opened.countDown() }
-                override fun onDisconnected(camera: CameraDevice) { camera.close(); opened.countDown() }
-                override fun onError(camera: CameraDevice, error: Int) { camera.close(); opened.countDown() }
+                override fun onDisconnected(camera: CameraDevice) {
+                    openError = "CAMERA_OPEN_DISCONNECTED"
+                    camera.close()
+                    opened.countDown()
+                }
+                override fun onError(camera: CameraDevice, error: Int) {
+                    openError = "CAMERA_OPEN_ERROR_$error"
+                    camera.close()
+                    opened.countDown()
+                }
             }, handler)
-            if (!opened.await(5, TimeUnit.SECONDS) || cameraDevice == null) return JSONObject().put("ok", false).put("error", "CAMERA_OPEN_FAILED")
+            if (!opened.await(6, TimeUnit.SECONDS)) return photoFailure("CAMERA_OPEN_TIMEOUT", camera, captureStartedAt)
+            if (cameraDevice == null) return photoFailure(openError ?: "CAMERA_OPEN_FAILED", camera, captureStartedAt)
             val configured = CountDownLatch(1)
             cameraDevice!!.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(value: CameraCaptureSession) { session = value; configured.countDown() }
-                override fun onConfigureFailed(value: CameraCaptureSession) { configured.countDown() }
+                override fun onConfigureFailed(value: CameraCaptureSession) { sessionError = true; configured.countDown() }
             }, handler)
-            if (!configured.await(5, TimeUnit.SECONDS) || session == null) return JSONObject().put("ok", false).put("error", "CAMERA_SESSION_FAILED")
-            val request = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                addTarget(reader.surface)
-                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                set(CaptureRequest.JPEG_ORIENTATION, 0)
-            }.build()
-            session!!.capture(request, object : CameraCaptureSession.CaptureCallback() {}, handler)
-            if (!latch.await(8, TimeUnit.SECONDS) || imageBytes == null) return JSONObject().put("ok", false).put("error", "CAMERA_CAPTURE_TIMEOUT")
+            if (!configured.await(6, TimeUnit.SECONDS)) return photoFailure("CAMERA_SESSION_TIMEOUT", camera, captureStartedAt)
+            if (session == null) return photoFailure(if (sessionError) "CAMERA_SESSION_CONFIG_FAILED" else "CAMERA_SESSION_FAILED", camera, captureStartedAt)
+            val aeModes = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES)?.toSet().orEmpty()
+            val afModes = characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)?.toSet().orEmpty()
+            val awbModes = characteristics.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)?.toSet().orEmpty()
+            val flashAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            val aeMode: Int? = when {
+                flashAvailable && aeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH) ->
+                    CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH
+                aeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON) -> CaptureRequest.CONTROL_AE_MODE_ON
+                else -> aeModes.firstOrNull()
+            }
+            val afMode: Int? = when {
+                afModes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) ->
+                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                afModes.contains(CaptureRequest.CONTROL_AF_MODE_AUTO) ->
+                    CaptureRequest.CONTROL_AF_MODE_AUTO
+                else -> null
+            }
+
+            var selectedBytes: ByteArray? = null
+            var selectedResult: TotalCaptureResult? = null
+            var threeASettled = false
+            // Camera2 needs time to meter and focus. The old single immediate still
+            // request could save a frame before auto-exposure had converged, producing
+            // very dark photos on devices without a preview stream. Retry at most twice
+            // after the initial metering frame; only the last selected frame is uploaded.
+            for (attempt in 0 until 3) {
+                val resultLatch = CountDownLatch(1)
+                val resultRef = AtomicReference<TotalCaptureResult?>()
+                val request = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                    addTarget(reader.surface)
+                    set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                    if (aeMode != null) set(CaptureRequest.CONTROL_AE_MODE, aeMode)
+                    if (afMode != null) set(CaptureRequest.CONTROL_AF_MODE, afMode)
+                    if (awbModes.contains(CaptureRequest.CONTROL_AWB_MODE_AUTO)) {
+                        set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                    }
+                    set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
+                        if (attempt == 0) CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START
+                        else CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE)
+                    if (afMode != null) {
+                        set(CaptureRequest.CONTROL_AF_TRIGGER,
+                            if (attempt == 0) CaptureRequest.CONTROL_AF_TRIGGER_START
+                            else CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+                    }
+                    set(CaptureRequest.JPEG_ORIENTATION, 0)
+                }.build()
+
+                session!!.capture(request, object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult
+                    ) {
+                        resultRef.set(result)
+                        resultLatch.countDown()
+                    }
+
+                    override fun onCaptureFailed(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        failure: CaptureFailure
+                    ) {
+                        Log.w("JazzRecoveryPhoto", "Camera frame failed attempt=" + (attempt + 1) +
+                            " reason=" + failure.reason)
+                        resultLatch.countDown()
+                    }
+                }, handler)
+
+                if (!resultLatch.await(5, TimeUnit.SECONDS)) {
+                    return photoFailure("CAMERA_CAPTURE_RESULT_TIMEOUT", camera, captureStartedAt)
+                }
+                val frameResult = resultRef.get()
+                    ?: return photoFailure("CAMERA_CAPTURE_RESULT_FAILED", camera, captureStartedAt)
+                val frameBytes = imageQueue.poll(5, TimeUnit.SECONDS)
+                    ?: return photoFailure("CAMERA_IMAGE_TIMEOUT", camera, captureStartedAt)
+
+                selectedBytes = frameBytes
+                selectedResult = frameResult
+                val aeState = frameResult.get(CaptureResult.CONTROL_AE_STATE)
+                val afState = frameResult.get(CaptureResult.CONTROL_AF_STATE)
+                val aeReady = aeState == null ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_LOCKED ||
+                    aeState == CaptureResult.CONTROL_AE_STATE_FLASH_REQUIRED
+                val afReady = afMode == null || afState == null ||
+                    afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED ||
+                    afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_FOCUSED ||
+                    afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_UNFOCUSED
+
+                Log.i("JazzRecoveryPhoto", "Camera metering camera=" + camera +
+                    " attempt=" + (attempt + 1) + "/3 aeState=" + aeState +
+                    " afState=" + afState +
+                    " exposureNs=" + frameResult.get(CaptureResult.SENSOR_EXPOSURE_TIME) +
+                    " iso=" + frameResult.get(CaptureResult.SENSOR_SENSITIVITY) +
+                    " dimensions=" + size.width + "x" + size.height)
+
+                if (aeReady && afReady) {
+                    threeASettled = true
+                    break
+                }
+            }
+
+            val sourceBytes = selectedBytes
+                ?: return photoFailure("CAMERA_CAPTURE_EMPTY", camera, captureStartedAt)
+            if (!threeASettled) {
+                Log.w("JazzRecoveryPhoto", "Auto-exposure/focus did not fully converge after 3 frames; using latest frame camera=" + camera)
+            }
+            val compressed = compressJpegWithinLimit(sourceBytes)
+                ?: return photoFailure("PHOTO_COMPRESSION_FAILED_OR_TOO_LARGE", camera, captureStartedAt)
+            Log.i("JazzRecoveryPhoto", "Capture ready camera=" + camera + " bytes=" + compressed.size +
+                " sourceBytes=" + sourceBytes.size +
+                " aeState=" + selectedResult?.get(CaptureResult.CONTROL_AE_STATE) +
+                " exposureNs=" + selectedResult?.get(CaptureResult.SENSOR_EXPOSURE_TIME) +
+                " iso=" + selectedResult?.get(CaptureResult.SENSOR_SENSITIVITY) +
+                " durationMs=" + (System.currentTimeMillis() - captureStartedAt))
             return JSONObject().put("ok", true).put("camera", camera)
-                .put("mimeType", "image/jpeg").put("imageBase64", Base64.encodeToString(imageBytes, Base64.NO_WRAP))
+                .put("mimeType", "image/jpeg").put("imageBase64", Base64.encodeToString(compressed, Base64.NO_WRAP))
                 .put("timestamp", System.currentTimeMillis())
+        } catch (failure: SecurityException) {
+            return photoFailure("CAMERA_ACCESS_RESTRICTED", camera, captureStartedAt, failure)
+        } catch (failure: CameraAccessException) {
+            val code = if (failure.reason == CameraAccessException.CAMERA_IN_USE ||
+                failure.reason == CameraAccessException.MAX_CAMERAS_IN_USE) "CAMERA_BUSY" else "CAMERA_ACCESS_ERROR"
+            return photoFailure(code, camera, captureStartedAt, failure)
+        } catch (failure: Exception) {
+            return photoFailure("CAMERA_CAPTURE_FAILED", camera, captureStartedAt, failure)
         } finally {
             runCatching { session?.close() }
             runCatching { cameraDevice?.close() }
-            reader.close()
+            runCatching { reader.close() }
             handlerThread.quitSafely()
+        }
+    }
+
+    private fun photoFailure(code: String, camera: String, startedAt: Long, cause: Throwable? = null): JSONObject {
+        Log.w("JazzRecoveryPhoto", "Capture failed camera=" + camera + " code=" + code +
+            " durationMs=" + (System.currentTimeMillis() - startedAt) +
+            (cause?.let { " exception=" + it.javaClass.simpleName } ?: ""))
+        return JSONObject().put("ok", false).put("status", code).put("error", code)
+            .put("camera", camera).put("timestamp", System.currentTimeMillis())
+    }
+
+    private fun compressJpegWithinLimit(source: ByteArray): ByteArray? {
+        if (source.isEmpty()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(source, 0, source.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val largest = maxOf(bounds.outWidth, bounds.outHeight)
+        // Use a power-of-two sample that does not undershoot the target edge.
+        // Rounding the ratio up here halved images just above 2560 px (for example 2700 px -> 1350 px).
+        val sample = Integer.highestOneBit(maxOf(1, largest / jpegLongEdge)).coerceAtLeast(1)
+        val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
+        val decoded = BitmapFactory.decodeByteArray(source, 0, source.size, options) ?: return null
+        val bitmap = if (maxOf(decoded.width, decoded.height) > jpegLongEdge) {
+            val scale = jpegLongEdge.toFloat() / maxOf(decoded.width, decoded.height)
+            Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
+                (decoded.height * scale).toInt().coerceAtLeast(1), true)
+        } else decoded
+        return try {
+            for (quality in listOf(jpegQuality, 86, 82, 78, 74, 70, 66)) {
+                val output = java.io.ByteArrayOutputStream()
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) return null
+                val bytes = output.toByteArray()
+                if (bytes.size <= maxPhotoBytes) return bytes
+            }
+            null
+        } finally {
+            if (bitmap !== decoded) bitmap.recycle()
+            decoded.recycle()
         }
     }
 
@@ -226,22 +502,30 @@ class RecoveryAgentService : Service() {
 
     private fun request(method: String, url: String, token: String, deviceId: String, body: JSONObject?): JSONObject? {
         val conn = URL(url).openConnection() as HttpURLConnection
+        val isPhotoResult = url.contains("/android/device/commands/") && url.endsWith("/result") &&
+            !body?.optJSONObject("result")?.optString("imageBase64").isNullOrBlank()
         try {
             conn.requestMethod = method
-            conn.connectTimeout = 5000
-            conn.readTimeout = 8000
+            conn.connectTimeout = if (isPhotoResult) 10_000 else 5_000
+            conn.readTimeout = if (isPhotoResult) 60_000 else 8_000
             conn.instanceFollowRedirects = false
-            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.setRequestProperty("Authorization", "Bearer " + token)
             conn.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val bytes = body.toString().toByteArray(Charsets.UTF_8)
+                conn.setFixedLengthStreamingMode(bytes.size)
+                conn.outputStream.use { it.write(bytes) }
             }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-            return if (code in 200..299 && text.isNotBlank()) JSONObject(text) else null
+            val text = stream?.bufferedReader()?.use { it.readText().take(4096) } ?: ""
+            if (code !in 200..299) {
+                Log.w("JazzRecoveryPhoto", "Server returned HTTP " + code + " for " + URL(url).path)
+                return null
+            }
+            return if (text.isNotBlank()) JSONObject(text) else JSONObject().put("ok", true)
         } finally { conn.disconnect() }
     }
 
