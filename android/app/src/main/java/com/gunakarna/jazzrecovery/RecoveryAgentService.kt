@@ -145,18 +145,125 @@ class RecoveryAgentService : Service() {
         return runCatching { if (GlobalLocationController.isEnabled(this)) "ON" else "OFF" }.getOrDefault("UNKNOWN")
     }
 
+    /**
+     * Requests fresh fixes first. Cached data is used only after bounded fresh-provider
+     * attempts fail, and is explicitly labelled so callers never present it as live.
+     * Cellular and BLE helper positioning are reported as unavailable until their
+     * separately authenticated provider/service integrations are configured.
+     */
     private fun getLocation(): JSONObject {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return JSONObject().put("ok", false).put("error", "LOCATION_PERMISSION_REQUIRED")
         }
+
+        val attempts = org.json.JSONArray()
+        val gps = runCatching { requestFreshGps() }.getOrNull()
+        if (gps != null && validFreshLocation(gps)) {
+            attempts.put(locationJson(gps, "GPS_GNSS", true))
+            return locationEnvelope(gps, "GPS_GNSS", true, attempts)
+        }
+        attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
+
+        val fused = runCatching { requestFreshFused() }.getOrNull()
+        if (fused != null && validFreshLocation(fused)) {
+            attempts.put(locationJson(fused, "FUSED", true))
+            return locationEnvelope(fused, "FUSED", true, attempts)
+        }
+        attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
+
+        // These entries are deliberately not fabricated coordinates. Implementing them
+        // requires an authenticated cellular-positioning provider and an enrolled BLE
+        // helper/report protocol, neither of which exists in this branch yet.
+        attempts.put(JSONObject().put("source", "CELLULAR").put("status", "NOT_CONFIGURED"))
+        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NOT_CONFIGURED"))
+
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        val loc = lm.getProviders(true).mapNotNull { provider ->
-            runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
-        }.maxByOrNull { it.time } ?: return JSONObject().put("ok", false).put("error", "NO_CACHED_LOCATION")
-        return JSONObject().put("ok", true).put("latitude", loc.latitude).put("longitude", loc.longitude)
-            .put("accuracyMeters", loc.accuracy).put("timestamp", loc.time)
+        val cached = runCatching {
+            lm.getProviders(true).mapNotNull { provider ->
+                runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
+            }.filter { validCoordinates(it.latitude, it.longitude) && it.time > 0L }
+                .maxByOrNull { it.time }
+        }.getOrNull()
+        if (cached != null) {
+            attempts.put(locationJson(cached, "LAST_KNOWN", false))
+            return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
+        }
+        return JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
+            .put("source", "NONE").put("fresh", false).put("locations", attempts)
     }
+
+    private fun requestFreshGps(): android.location.Location? {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        if (!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) return null
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<android.location.Location?>()
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                result.set(location)
+                latch.countDown()
+            }
+            @Deprecated("Deprecated by Android")
+            override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) { latch.countDown() }
+        }
+        return try {
+            manager.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper())
+            latch.await(10, TimeUnit.SECONDS)
+            result.get()?.takeIf { validFreshLocation(it) }
+        } finally {
+            runCatching { manager.removeUpdates(listener) }
+        }
+    }
+
+    private fun requestFreshFused(): android.location.Location? {
+        val cancellation = com.google.android.gms.tasks.CancellationTokenSource()
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<android.location.Location?>()
+        try {
+            com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+                .getCurrentLocation(
+                    com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                    cancellation.token
+                )
+                .addOnSuccessListener { location -> result.set(location); latch.countDown() }
+                .addOnFailureListener { latch.countDown() }
+            latch.await(10, TimeUnit.SECONDS)
+            return result.get()?.takeIf { validFreshLocation(it) }
+        } finally {
+            cancellation.cancel()
+        }
+    }
+
+    private fun validCoordinates(latitude: Double, longitude: Double): Boolean =
+        latitude.isFinite() && longitude.isFinite() &&
+            latitude in -90.0..90.0 && longitude in -180.0..180.0
+
+    private fun validFreshLocation(location: android.location.Location): Boolean {
+        val age = System.currentTimeMillis() - location.time
+        return validCoordinates(location.latitude, location.longitude) &&
+            location.time > 0L && age in 0L..30_000L &&
+            location.hasAccuracy() && location.accuracy.isFinite() && location.accuracy >= 0f
+    }
+
+    private fun locationJson(location: android.location.Location, source: String, fresh: Boolean) =
+        JSONObject().put("source", source).put("status", if (fresh) "SUCCESS" else "CACHED")
+            .put("latitude", location.latitude).put("longitude", location.longitude)
+            .put("accuracyMeters", if (location.hasAccuracy()) location.accuracy else JSONObject.NULL)
+            .put("timestamp", location.time).put("fresh", fresh)
+
+    private fun locationEnvelope(
+        location: android.location.Location,
+        source: String,
+        fresh: Boolean,
+        attempts: org.json.JSONArray
+    ) = JSONObject().put("ok", true).put("latitude", location.latitude)
+        .put("longitude", location.longitude)
+        .put("accuracyMeters", if (location.hasAccuracy()) location.accuracy else JSONObject.NULL)
+        .put("timestamp", location.time).put("source", source).put("fresh", fresh)
+        .put("locations", attempts)
+
 
     private fun ring(duration: Long): JSONObject {
         val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_ALARM, 100)
