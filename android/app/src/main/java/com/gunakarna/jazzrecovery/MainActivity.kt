@@ -484,7 +484,7 @@ class MainActivity : Activity() {
             hint = "Trusted helper device ID"
             setTextColor(white)
             setHintTextColor(muted)
-            singleLine = true
+            isSingleLine = true
             textSize = 14f
             setPadding(dp(12), dp(8), dp(12), dp(8))
             background = shape(panelAlt, 10, blue, 1)
