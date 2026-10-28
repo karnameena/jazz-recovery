@@ -134,6 +134,7 @@ class RecoveryAgentService : Service() {
                 lastBeaconRefresh = now
                 val accepted = request("POST", base + "/android/device/location-helper/beacon-tokens", token, deviceId, body)
                 if (accepted?.optBoolean("ok") == true) locationHelperBle.startAdvertising(raw)
+                else locationHelperBle.stopAdvertising()
             }
         } else {
             locationHelperBle.stopAdvertising()
