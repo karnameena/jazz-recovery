@@ -165,13 +165,15 @@ class RecoveryAgentService : Service() {
         if (normalized == "last") {
             val cached = lastKnownLocation()
                 ?: return JSONObject().put("ok", false).put("error", "NO_CACHED_LOCATION")
-                    .put("source", "NONE").put("fresh", false).put("locations", attempts)
+                    .put("source", "NONE").put("fresh", false).put("locations", attempts).put("cellTowers", cellTowers)
             attempts.put(locationJson(cached, "LAST_KNOWN", false))
             return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
         }
         if (normalized == "cell") {
-            return JSONObject().put("ok", false).put("error", "CELLULAR_POSITIONING_NOT_CONFIGURED")
-                .put("source", "CELLULAR").put("fresh", false)
+            val towers = readCellTowers()
+            return JSONObject().put("ok", false).put("error", if (towers.length() == 0) "CELL_INFO_UNAVAILABLE" else "CELLULAR_POSITIONING_PENDING")
+                .put("source", "CELLULAR").put("fresh", false).put("cellTowers", towers)
+                .put("locations", org.json.JSONArray())
         }
         if (normalized == "gps") {
             val gps = runCatching { requestFreshGps() }.getOrNull()
@@ -210,24 +212,78 @@ class RecoveryAgentService : Service() {
             attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
         }
 
-        // No cellular positioning service or authenticated BLE-helper report endpoint is
-        // implemented in this staging branch yet. Report that honestly; never fabricate fixes.
-        attempts.put(JSONObject().put("source", "CELLULAR").put("status", "NOT_CONFIGURED"))
+        val cellTowers = readCellTowers()
+        attempts.put(JSONObject().put("source", "CELLULAR").put("status",
+            if (cellTowers.length() > 0) "PENDING_SERVER_LOOKUP" else "CELL_INFO_UNAVAILABLE"))
         attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NOT_CONFIGURED"))
 
         val cached = lastKnownLocation()
         if (cached != null) attempts.put(locationJson(cached, "LAST_KNOWN", false))
         val chosen = gps ?: fused ?: cached
+        val cellPending = cellTowers.length() > 0
         return if (chosen != null) {
             val source = when {
                 gps != null -> "GPS_GNSS"
                 fused != null -> "FUSED"
                 else -> "LAST_KNOWN"
             }
-            locationEnvelope(chosen, source, source != "LAST_KNOWN", attempts)
+            locationEnvelope(chosen, source, source != "LAST_KNOWN", attempts).put("cellTowers", cellTowers)
         } else {
             JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
                 .put("source", "NONE").put("fresh", false).put("locations", attempts)
+        }
+    }
+
+    /** Collect only radio-cell measurements needed for a coarse estimate; never collect IMEI/phone number. */
+    private fun readCellTowers(): org.json.JSONArray {
+        val output = org.json.JSONArray()
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return output
+        return try {
+            val telephony = getSystemService(TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            val cells = telephony.allCellInfo ?: return output
+            for (info in cells) {
+                val item = JSONObject()
+                when (info) {
+                    is android.telephony.CellInfoLte -> {
+                        val id = info.cellIdentity
+                        if (id.ci < 0 || id.tac < 0 || id.mcc == Int.MAX_VALUE || id.mnc == Int.MAX_VALUE) continue
+                        item.put("radioType", "lte").put("cellId", id.ci).put("locationAreaCode", id.tac)
+                            .put("mobileCountryCode", id.mcc).put("mobileNetworkCode", id.mnc)
+                            .put("signalStrength", info.cellSignalStrength.dbm)
+                    }
+                    is android.telephony.CellInfoWcdma -> {
+                        val id = info.cellIdentity
+                        if (id.cid < 0 || id.lac < 0 || id.mcc == Int.MAX_VALUE || id.mnc == Int.MAX_VALUE) continue
+                        item.put("radioType", "wcdma").put("cellId", id.cid).put("locationAreaCode", id.lac)
+                            .put("mobileCountryCode", id.mcc).put("mobileNetworkCode", id.mnc)
+                            .put("signalStrength", info.cellSignalStrength.dbm)
+                    }
+                    is android.telephony.CellInfoGsm -> {
+                        val id = info.cellIdentity
+                        if (id.cid < 0 || id.lac < 0 || id.mcc == Int.MAX_VALUE || id.mnc == Int.MAX_VALUE) continue
+                        item.put("radioType", "gsm").put("cellId", id.cid).put("locationAreaCode", id.lac)
+                            .put("mobileCountryCode", id.mcc).put("mobileNetworkCode", id.mnc)
+                            .put("signalStrength", info.cellSignalStrength.dbm)
+                    }
+                    is android.telephony.CellInfoNr -> {
+                        val id = info.cellIdentity as android.telephony.CellIdentityNr
+                        val nci = id.nci
+                        if (nci < 0 || id.tac < 0 || id.mccString.isNullOrBlank() || id.mncString.isNullOrBlank()) continue
+                        item.put("radioType", "nr").put("newRadioCellId", nci)
+                            .put("locationAreaCode", id.tac).put("mobileCountryCode", id.mccString.toInt())
+                            .put("mobileNetworkCode", id.mncString.toInt()).put("signalStrength", info.cellSignalStrength.dbm)
+                    }
+                    else -> continue
+                }
+                output.put(item)
+                if (output.length() >= 16) break
+            }
+            output
+        } catch (_: SecurityException) {
+            output
+        } catch (_: Exception) {
+            output
         }
     }
 
