@@ -53,6 +53,17 @@ type Device = {
   locationServicesLastConfirmed?: number | null;
   mode: string;
   location: LocationState | null;
+  locationResults?: Array<{
+    source?: string;
+    status?: string;
+    latitude?: number;
+    longitude?: number;
+    accuracyMeters?: number | null;
+    timestamp?: number;
+    fresh?: boolean;
+  }>;
+  locationSource?: string | null;
+  locationFresh?: boolean | null;
   photo: PhotoState | null;
 };
 
