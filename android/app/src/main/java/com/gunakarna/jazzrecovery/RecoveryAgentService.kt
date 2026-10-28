@@ -131,10 +131,9 @@ class RecoveryAgentService : Service() {
                 val beaconToken = Base64.encodeToString(raw, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
                 val body = JSONObject().put("tokens", org.json.JSONArray().put(beaconToken))
                     .put("expiresAtMs", now + 10 * 60_000L)
+                lastBeaconRefresh = now
                 val accepted = request("POST", base + "/android/device/location-helper/beacon-tokens", token, deviceId, body)
-                if (accepted?.optBoolean("ok") == true) {
-                    if (locationHelperBle.startAdvertising(raw)) lastBeaconRefresh = now
-                }
+                if (accepted?.optBoolean("ok") == true) locationHelperBle.startAdvertising(raw)
             }
         } else {
             locationHelperBle.stopAdvertising()
@@ -183,9 +182,12 @@ class RecoveryAgentService : Service() {
             val queue = runCatching { org.json.JSONArray(prefs.getString("jazz_ble_report_queue", "[]")) }
                 .getOrDefault(org.json.JSONArray())
             val remaining = org.json.JSONArray()
+            var attempted = 0
             for (index in 0 until queue.length()) {
                 val report = queue.optJSONObject(index) ?: continue
                 if (System.currentTimeMillis() - report.optLong("observedAtMs", 0L) > 10 * 60_000L) continue
+                if (attempted >= 3) { remaining.put(report); continue }
+                attempted++
                 val response = request("POST", base + "/android/device/location-helper/report", token, deviceId, report)
                 if (response?.optBoolean("ok") != true) remaining.put(report)
             }
