@@ -366,6 +366,10 @@ class MainActivity : Activity() {
         permissionLine(card, "Fine location", Manifest.permission.ACCESS_FINE_LOCATION)
         permissionLine(card, "Coarse location", Manifest.permission.ACCESS_COARSE_LOCATION)
         permissionLine(card, "Phone state (cellular information)", Manifest.permission.READ_PHONE_STATE)
+        actionButton(card, "Enable cellular positioning permission", "Grant") {
+            if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.READ_PHONE_STATE), 105)
+            else toast("Cellular positioning permission is already granted")
+        }
         if (Build.VERSION.SDK_INT >= 29) permissionLine(card, "Background location (Allow all the time)", Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         permissionLine(card, "Secure settings (ADB/device-owner grant)", Manifest.permission.WRITE_SECURE_SETTINGS)
         addText(card, "Background access is optional and must be explicitly allowed in Android settings. Declaring WRITE_SECURE_SETTINGS does not grant it; Android/device policy can still refuse global Location changes.", 11f, muted, false, top = 2, bottom = 8)
@@ -570,7 +574,7 @@ class MainActivity : Activity() {
 
     private fun requestNeededPermissions() {
         val needed = mutableListOf<String>()
-        listOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.READ_PHONE_STATE).forEach {
+        listOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).forEach {
             if (checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED) needed.add(it)
         }
         if (Build.VERSION.SDK_INT >= 31) {
