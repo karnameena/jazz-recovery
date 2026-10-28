@@ -46,7 +46,8 @@ Status: staging work in progress. This document is a checklist, not evidence tha
 - Added multi-provider result metadata to the device API response.
 - Added server validation for coordinates/timestamps and a conditional update so an older location cannot overwrite a newer stored location.
 - PostgreSQL migration verification and web/API compatibility checks have passed in GitHub Actions for the commits checked during this work.
-- Android build is still being checked; do not distribute until the latest staging build succeeds.
+- Android debug build verification PASSED on 2026-10-28. GitHub Actions run `40685814181` completed successfully and uploaded `jazz-recovery-debug-apk`; this is a debug artifact, not a signed production release.
 - Cellular positioning is NOT implemented yet: the current Android code returns CELLULAR_POSITIONING_NOT_CONFIGURED. A production provider choice, privacy review, service configuration, and device-side cell-information mapping are still required.
 - BLE helper recovery is NOT implemented yet: the current Android code returns BLE_HELPER NOT_CONFIGURED. It needs an enrolled helper protocol, authenticated/replay-resistant reports, opt-in/privacy controls, offline queueing, and end-to-end tests.
-- Real-device testing, full regression testing, production hosting, Neon production provisioning, backup/restore rehearsal, and release approval remain outstanding.
+- Full end-to-end cellular and BLE implementation remains outstanding. Cellular requires a selected provider, secure server-side API-key configuration, runtime permission handling, and real cell-measurement tests. BLE requires an opt-in helper enrollment/advertising/scanning design, authenticated reports, anti-replay and deduplication, retention/privacy controls, offline queue/retry, and multi-device tests.
+- Real-device testing, full regression testing, production hosting, separate Neon production provisioning, backup/restore rehearsal, signed release checks, and explicit release approval remain outstanding. These gates cannot honestly be marked complete from CI-only checks; do not cut over or distribute the debug APK as a production release.
