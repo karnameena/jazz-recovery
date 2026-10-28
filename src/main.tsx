@@ -61,6 +61,7 @@ type Device = {
     accuracyMeters?: number | null;
     timestamp?: number;
     fresh?: boolean;
+    estimated?: boolean;
   }>;
   locationSource?: string | null;
   locationFresh?: boolean | null;
@@ -1091,6 +1092,30 @@ function App() {
                       </p>
                     </div>
                   )}
+                  {device.locationResults?.length ? (
+                    <div className="location-provider-results">
+                      <div className="card-heading">
+                        <h3>Location provider results</h3>
+                        <span>{device.locationResults.length} source checks</span>
+                      </div>
+                      <div className="location-meta">
+                        {device.locationResults.map((result, index) => (
+                          <div key={(result.source || "provider") + "-" + (result.timestamp || index) + "-" + index}>
+                            <span>{(result.source || "UNKNOWN").replaceAll("_", " ")}</span>
+                            <strong>
+                              {result.status || (result.fresh ? "SUCCESS" : "CACHED")}
+                              {result.estimated ? " • PROXIMITY ESTIMATE" : ""}
+                              {Number.isFinite(result.latitude) && Number.isFinite(result.longitude)
+                                ? " • " + Number(result.latitude).toFixed(5) + ", " + Number(result.longitude).toFixed(5)
+                                : ""}
+                              {result.accuracyMeters != null ? " • ±" + Math.round(result.accuracyMeters) + " m" : ""}
+                              {result.timestamp ? " • " + formatTime(result.timestamp) : ""}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
 
                 <article className="photo-card glass-panel">
