@@ -480,9 +480,57 @@ class MainActivity : Activity() {
         actionButton(card, if (prefs.getBoolean("location_beacon_enabled", false)) "Disable this phone's recovery beacon" else "Enable this phone's recovery beacon", if (prefs.getBoolean("location_beacon_enabled", false)) "Disable" else "Enable") {
             updateLocationHelperSetting("/android/device/location-helper/beacon-setting", !prefs.getBoolean("location_beacon_enabled", false), "location_beacon_enabled")
         }
-        addText(card, "Beacon broadcasting only starts after at least one trusted helper is authorized by the device owner. Reports are proximity estimates, not exact lost-phone coordinates.", 11f, muted, false, top = 10)
+        val helperIdInput = EditText(this).apply {
+            hint = "Trusted helper device ID"
+            setTextColor(white)
+            setHintTextColor(muted)
+            singleLine = true
+            textSize = 14f
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = shape(panelAlt, 10, blue, 1)
+        }
+        card.addView(helperIdInput, LinearLayout.LayoutParams(-1, dp(48)))
+        actionButton(card, "Authorize trusted helper device", "Authorize") {
+            authorizeHelperDevice(helperIdInput.text.toString().trim())
+        }
+        addText(card, "Both phones must be registered. The helper owner must opt in first; the target owner then authorizes the helper. Reports are proximity estimates, not exact lost-phone coordinates.", 11f, muted, false, top = 10)
         content.addView(card, marginParams(bottom = 16))
         addStatusCard()
+    }
+
+    private fun authorizeHelperDevice(helperDeviceId: String) {
+        if (helperDeviceId.isBlank()) { toast("Enter the helper device ID"); return }
+        val base = (prefs.getString("server", "") ?: "").trimEnd('/')
+        val secret = runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull()
+        if (!validHttpsUrl(base) || secret.isNullOrBlank()) {
+            toast("Save the HTTPS server URL and device token first")
+            return
+        }
+        Thread {
+            var success = false
+            var responseMessage = ""
+            try {
+                val connection = URL(base + "/android/device/location-helper/authorize").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 8000
+                    connection.readTimeout = 12000
+                    connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("Authorization", "Bearer " + secret)
+                    connection.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.doOutput = true
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("helperDeviceId", helperDeviceId).put("enabled", true).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    responseMessage = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(400) } ?: ""
+                    success = code in 200..299
+                } finally { connection.disconnect() }
+            } catch (failure: Exception) { responseMessage = failure.javaClass.simpleName }
+            runOnUiThread { toast(if (success) "Trusted helper authorized" else "Could not authorize helper: " + responseMessage.take(180)) }
+        }.start()
     }
 
     private fun updateLocationHelperSetting(path: String, enabled: Boolean, preferenceKey: String) {
