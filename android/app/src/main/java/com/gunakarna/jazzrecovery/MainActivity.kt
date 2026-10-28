@@ -537,6 +537,24 @@ class MainActivity : Activity() {
     }
 
     private fun updateLocationHelperSetting(path: String, enabled: Boolean, preferenceKey: String) {
+        if (enabled && path.endsWith("/consent")) {
+            val needed = mutableListOf<String>()
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+                needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)
+                needed.add(Manifest.permission.BLUETOOTH_SCAN)
+            if (needed.isNotEmpty()) {
+                requestPermissions(needed.toTypedArray(), 106)
+                toast("Grant location and Bluetooth scan permissions, then opt in again")
+                return
+            }
+        }
+        if (enabled && path.endsWith("/beacon-setting") && Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE), 107)
+            toast("Grant Bluetooth advertising permission, then enable the beacon again")
+            return
+        }
         val base = (prefs.getString("server", "") ?: "").trimEnd('/')
         val secret = runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull()
         if (!validHttpsUrl(base) || secret.isNullOrBlank()) {
