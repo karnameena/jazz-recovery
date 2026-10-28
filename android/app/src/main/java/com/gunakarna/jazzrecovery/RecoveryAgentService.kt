@@ -39,6 +39,9 @@ class RecoveryAgentService : Service() {
     private val maxPhotoBytes = 5 * 1024 * 1024
     private val jpegLongEdge = 2560
     private val jpegQuality = 90
+    private val locationHelperBle by lazy { LocationHelperBle(this) }
+    private var lastBeaconRefresh = 0L
+    private val helperQueueLock = Any()
 
     override fun onCreate() {
         super.onCreate()
@@ -76,6 +79,8 @@ class RecoveryAgentService : Service() {
         running = false
         worker?.interrupt()
         worker = null
+        locationHelperBle.stopAdvertising()
+        locationHelperBle.stopScanning()
         super.onDestroy()
     }
 
@@ -107,12 +112,84 @@ class RecoveryAgentService : Service() {
                                 .put("locationServices", locationState())))
                         lastHeartbeat = System.currentTimeMillis()
                     }
+                    maintainLocationHelpers(base, token, deviceId)
+                    flushHelperReports(base, token, deviceId)
                     val response = request("GET", base + "/android/device/commands/next", token, deviceId, null)
                     val command = response?.optJSONObject("command")
                     if (command != null) handleCommand(base, token, deviceId, command)
                 }
             } catch (_: Exception) { /* Retry on next short poll; do not crash the foreground service. */ }
             try { Thread.sleep(2500) } catch (_: InterruptedException) { break }
+        }
+    }
+
+    private fun maintainLocationHelpers(base: String, token: String, deviceId: String) {
+        val now = System.currentTimeMillis()
+        if (prefs.getBoolean("location_beacon_enabled", false)) {
+            if (now - lastBeaconRefresh >= 60_000L) {
+                val raw = ByteArray(10).also { java.security.SecureRandom().nextBytes(it) }
+                val beaconToken = Base64.encodeToString(raw, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                val body = JSONObject().put("tokens", org.json.JSONArray().put(beaconToken))
+                    .put("expiresAtMs", now + 10 * 60_000L)
+                val accepted = request("POST", base + "/android/device/location-helper/beacon-tokens", token, deviceId, body)
+                if (accepted?.optBoolean("ok") == true) {
+                    if (locationHelperBle.startAdvertising(raw)) lastBeaconRefresh = now
+                }
+            }
+        } else {
+            locationHelperBle.stopAdvertising()
+            lastBeaconRefresh = 0L
+        }
+
+        if (prefs.getBoolean("location_helper_opt_in", false)) {
+            locationHelperBle.startScanning { raw, rssi -> handleObservedHelperBeacon(base, token, deviceId, raw, rssi) }
+        } else locationHelperBle.stopScanning()
+    }
+
+    private fun handleObservedHelperBeacon(base: String, token: String, deviceId: String, raw: ByteArray, rssi: Int) {
+        val beaconToken = Base64.encodeToString(raw, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        synchronized(helperQueueLock) {
+            val seen = prefs.getStringSet("jazz_ble_seen_tokens", emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (beaconToken in seen) return
+            seen.add(beaconToken)
+            while (seen.size > 100) seen.remove(seen.first())
+            prefs.edit().putStringSet("jazz_ble_seen_tokens", seen).apply()
+        }
+        Thread {
+            val location = runCatching { requestFreshFused() }.getOrNull()
+                ?: runCatching { requestFreshGps() }.getOrNull()
+            if (location == null || !validFreshLocation(location)) return@Thread
+            val report = JSONObject()
+                .put("reportId", java.util.UUID.randomUUID().toString())
+                .put("beaconToken", beaconToken)
+                .put("observedAtMs", System.currentTimeMillis())
+                .put("latitude", location.latitude)
+                .put("longitude", location.longitude)
+                .put("accuracyMeters", location.accuracy)
+                .put("rssi", rssi)
+            synchronized(helperQueueLock) {
+                val queue = runCatching { org.json.JSONArray(prefs.getString("jazz_ble_report_queue", "[]")) }
+                    .getOrDefault(org.json.JSONArray())
+                if (queue.length() < 20) {
+                    queue.put(report)
+                    prefs.edit().putString("jazz_ble_report_queue", queue.toString()).apply()
+                }
+            }
+        }.start()
+    }
+
+    private fun flushHelperReports(base: String, token: String, deviceId: String) {
+        synchronized(helperQueueLock) {
+            val queue = runCatching { org.json.JSONArray(prefs.getString("jazz_ble_report_queue", "[]")) }
+                .getOrDefault(org.json.JSONArray())
+            val remaining = org.json.JSONArray()
+            for (index in 0 until queue.length()) {
+                val report = queue.optJSONObject(index) ?: continue
+                if (System.currentTimeMillis() - report.optLong("observedAtMs", 0L) > 10 * 60_000L) continue
+                val response = request("POST", base + "/android/device/location-helper/report", token, deviceId, report)
+                if (response?.optBoolean("ok") != true) remaining.put(report)
+            }
+            prefs.edit().putString("jazz_ble_report_queue", remaining.toString()).apply()
         }
     }
 
