@@ -1,7 +1,7 @@
 name: Jazz Recovery Android Build
 on:
   push:
-    branches: [feature/android-neon-ui-20261021, feature/passkey-reset-ui-20261021, feature/location-control-support-icons-20261022, staging/location-recovery-release-20261028]
+    branches: [feature/android-neon-ui-20261021, feature/passkey-reset-ui-20261021, feature/location-control-support-icons-20261022, staging/location-recovery-release-20261028, feature/fused-multisource-location-20261029]
   pull_request:
     branches: [feature/recovery-pin-20261021, feature/passkey-reset-ui-20261021]
     paths:
