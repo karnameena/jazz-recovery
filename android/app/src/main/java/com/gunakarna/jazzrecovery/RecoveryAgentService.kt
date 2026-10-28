@@ -151,8 +151,9 @@ class RecoveryAgentService : Service() {
     /**
      * Requests fresh fixes first. Cached data is used only after bounded fresh-provider
      * attempts fail, and is explicitly labelled so callers never present it as live.
-     * Cellular and BLE helper positioning are reported as unavailable until their
-     * separately authenticated provider/service integrations are configured.
+     * Cellular measurements are sent to the authenticated server for provider lookup.
+     * BLE helper reports remain disabled unless the full opt-in advertising/scanning
+     * flow is active; never fabricate a proximity result.
      */
     private fun getLocation(mode: String = "auto"): JSONObject {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
