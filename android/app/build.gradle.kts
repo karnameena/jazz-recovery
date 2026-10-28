@@ -9,4 +9,5 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
  implementation("androidx.work:work-runtime-ktx:2.10.1")
+ implementation("com.google.android.gms:play-services-location:21.3.0")
 }
