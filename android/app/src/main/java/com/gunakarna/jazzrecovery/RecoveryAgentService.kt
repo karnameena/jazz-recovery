@@ -122,7 +122,7 @@ class RecoveryAgentService : Service() {
                 "device_status" -> JSONObject().put("ok", true).put("mode", if (prefs.getBoolean("lost_mode", false)) "LOST_MODE" else "NORMAL_MODE")
                     .put("status", JSONObject().put("battery", (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
                         .put("network", "CONNECTED").put("locationServices", locationState()))
-                "device_location" -> getLocation()
+                "device_location" -> getLocation(args.optString("mode", "auto"))
                 "recovery_photo" -> capturePhoto(if (args.optString("camera") == "rear") "rear" else "front")
                 "ring_device" -> ring(args.optLong("durationMs", 10000L))
                 "set_recovery_mode" -> {
@@ -151,46 +151,91 @@ class RecoveryAgentService : Service() {
      * Cellular and BLE helper positioning are reported as unavailable until their
      * separately authenticated provider/service integrations are configured.
      */
-    private fun getLocation(): JSONObject {
+    private fun getLocation(mode: String = "auto"): JSONObject {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return JSONObject().put("ok", false).put("error", "LOCATION_PERMISSION_REQUIRED")
         }
-
+        val normalized = mode.lowercase().ifBlank { "auto" }
         val attempts = org.json.JSONArray()
-        val gps = runCatching { requestFreshGps() }.getOrNull()
-        if (gps != null && validFreshLocation(gps)) {
-            attempts.put(locationJson(gps, "GPS_GNSS", true))
-            return locationEnvelope(gps, "GPS_GNSS", true, attempts)
-        }
-        attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
 
-        val fused = runCatching { requestFreshFused() }.getOrNull()
-        if (fused != null && validFreshLocation(fused)) {
-            attempts.put(locationJson(fused, "FUSED", true))
-            return locationEnvelope(fused, "FUSED", true, attempts)
-        }
-        attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
-
-        // These entries are deliberately not fabricated coordinates. Implementing them
-        // requires an authenticated cellular-positioning provider and an enrolled BLE
-        // helper/report protocol, neither of which exists in this branch yet.
-        attempts.put(JSONObject().put("source", "CELLULAR").put("status", "NOT_CONFIGURED"))
-        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NOT_CONFIGURED"))
-
-        val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        val cached = runCatching {
-            lm.getProviders(true).mapNotNull { provider ->
-                runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
-            }.filter { validCoordinates(it.latitude, it.longitude) && it.time > 0L }
-                .maxByOrNull { it.time }
-        }.getOrNull()
-        if (cached != null) {
+        if (normalized == "last") {
+            val cached = lastKnownLocation()
+                ?: return JSONObject().put("ok", false).put("error", "NO_CACHED_LOCATION")
+                    .put("source", "NONE").put("fresh", false).put("locations", attempts)
             attempts.put(locationJson(cached, "LAST_KNOWN", false))
             return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
         }
-        return JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
-            .put("source", "NONE").put("fresh", false).put("locations", attempts)
+        if (normalized == "cell") {
+            return JSONObject().put("ok", false).put("error", "CELLULAR_POSITIONING_NOT_CONFIGURED")
+                .put("source", "CELLULAR").put("fresh", false)
+        }
+        if (normalized == "gps") {
+            val gps = runCatching { requestFreshGps() }.getOrNull()
+            if (gps != null && validFreshLocation(gps)) {
+                attempts.put(locationJson(gps, "GPS_GNSS", true))
+                return locationEnvelope(gps, "GPS_GNSS", true, attempts)
+            }
+            return JSONObject().put("ok", false).put("error", "FRESH_GPS_UNAVAILABLE")
+                .put("source", "GPS_GNSS").put("fresh", false).put("locations", attempts)
+        }
+        if (normalized == "fused") {
+            val fused = runCatching { requestFreshFused() }.getOrNull()
+            if (fused != null && validFreshLocation(fused)) {
+                attempts.put(locationJson(fused, "FUSED", true))
+                return locationEnvelope(fused, "FUSED", true, attempts)
+            }
+            return JSONObject().put("ok", false).put("error", "FRESH_FUSED_LOCATION_UNAVAILABLE")
+                .put("source", "FUSED").put("fresh", false).put("locations", attempts)
+        }
+
+        // "all" gathers independent fresh providers; "auto" follows the priority
+        // sequence and stops at the first validated fresh fix.
+        val gps = runCatching { requestFreshGps() }.getOrNull()?.takeIf { validFreshLocation(it) }
+        if (gps != null) {
+            attempts.put(locationJson(gps, "GPS_GNSS", true))
+            if (normalized != "all") return locationEnvelope(gps, "GPS_GNSS", true, attempts)
+        } else {
+            attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
+        }
+
+        val fused = runCatching { requestFreshFused() }.getOrNull()?.takeIf { validFreshLocation(it) }
+        if (fused != null) {
+            attempts.put(locationJson(fused, "FUSED", true))
+            if (gps == null && normalized != "all") return locationEnvelope(fused, "FUSED", true, attempts)
+        } else {
+            attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
+        }
+
+        // No cellular positioning service or authenticated BLE-helper report endpoint is
+        // implemented in this staging branch yet. Report that honestly; never fabricate fixes.
+        attempts.put(JSONObject().put("source", "CELLULAR").put("status", "NOT_CONFIGURED"))
+        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NOT_CONFIGURED"))
+
+        val cached = lastKnownLocation()
+        if (cached != null) attempts.put(locationJson(cached, "LAST_KNOWN", false))
+        val chosen = gps ?: fused ?: cached
+        return if (chosen != null) {
+            val source = when {
+                gps != null -> "GPS_GNSS"
+                fused != null -> "FUSED"
+                else -> "LAST_KNOWN"
+            }
+            locationEnvelope(chosen, source, source != "LAST_KNOWN", attempts)
+        } else {
+            JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
+                .put("source", "NONE").put("fresh", false).put("locations", attempts)
+        }
+    }
+
+    private fun lastKnownLocation(): android.location.Location? {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        return runCatching {
+            manager.getProviders(true).mapNotNull { provider ->
+                runCatching { manager.getLastKnownLocation(provider) }.getOrNull()
+            }.filter { validCoordinates(it.latitude, it.longitude) && it.time > 0L }
+                .maxByOrNull { it.time }
+        }.getOrNull()
     }
 
     private fun requestFreshGps(): android.location.Location? {
