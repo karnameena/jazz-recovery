@@ -39,3 +39,14 @@ Status: staging work in progress. This document is a checklist, not evidence tha
 - Production: separate Neon project, credentials, deployment environment, and backup/restore policy.
 - Configure hosted web/server HTTPS, DNS/TLS, CORS/cookies, health checks, logs, monitoring, rate limits, secret management, and rollback procedure.
 - No production cutover until all required tests pass and the user explicitly approves release.
+
+## Current staging implementation status (2026-10-28)
+- Added bounded fresh GPS/GNSS and Android Fused Location Provider attempts, source labels, coordinate/timestamp/accuracy validation, and last-known fallback.
+- Added explicit server command modes for GPS, fused, cellular, last-known, and all-provider requests.
+- Added multi-provider result metadata to the device API response.
+- Added server validation for coordinates/timestamps and a conditional update so an older location cannot overwrite a newer stored location.
+- PostgreSQL migration verification and web/API compatibility checks have passed in GitHub Actions for the commits checked during this work.
+- Android build is still being checked; do not distribute until the latest staging build succeeds.
+- Cellular positioning is NOT implemented yet: the current Android code returns CELLULAR_POSITIONING_NOT_CONFIGURED. A production provider choice, privacy review, service configuration, and device-side cell-information mapping are still required.
+- BLE helper recovery is NOT implemented yet: the current Android code returns BLE_HELPER NOT_CONFIGURED. It needs an enrolled helper protocol, authenticated/replay-resistant reports, opt-in/privacy controls, offline queueing, and end-to-end tests.
+- Real-device testing, full regression testing, production hosting, Neon production provisioning, backup/restore rehearsal, and release approval remain outstanding.
