@@ -165,7 +165,7 @@ class RecoveryAgentService : Service() {
         if (normalized == "last") {
             val cached = lastKnownLocation()
                 ?: return JSONObject().put("ok", false).put("error", "NO_CACHED_LOCATION")
-                    .put("source", "NONE").put("fresh", false).put("locations", attempts).put("cellTowers", cellTowers)
+                    .put("source", "NONE").put("fresh", false).put("locations", attempts)
             attempts.put(locationJson(cached, "LAST_KNOWN", false))
             return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
         }
@@ -220,7 +220,6 @@ class RecoveryAgentService : Service() {
         val cached = lastKnownLocation()
         if (cached != null) attempts.put(locationJson(cached, "LAST_KNOWN", false))
         val chosen = gps ?: fused ?: cached
-        val cellPending = cellTowers.length() > 0
         return if (chosen != null) {
             val source = when {
                 gps != null -> "GPS_GNSS"
@@ -230,7 +229,7 @@ class RecoveryAgentService : Service() {
             locationEnvelope(chosen, source, source != "LAST_KNOWN", attempts).put("cellTowers", cellTowers)
         } else {
             JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
-                .put("source", "NONE").put("fresh", false).put("locations", attempts)
+                .put("source", "NONE").put("fresh", false).put("locations", attempts).put("cellTowers", cellTowers)
         }
     }
 
@@ -269,10 +268,12 @@ class RecoveryAgentService : Service() {
                     is android.telephony.CellInfoNr -> {
                         val id = info.cellIdentity as android.telephony.CellIdentityNr
                         val nci = id.nci
-                        if (nci < 0 || id.tac < 0 || id.mccString.isNullOrBlank() || id.mncString.isNullOrBlank()) continue
+                        val mcc = id.mccString
+                        val mnc = id.mncString
+                        if (nci < 0 || id.tac < 0 || mcc.isNullOrBlank() || mnc.isNullOrBlank()) continue
                         item.put("radioType", "nr").put("newRadioCellId", nci)
-                            .put("locationAreaCode", id.tac).put("mobileCountryCode", id.mccString.toInt())
-                            .put("mobileNetworkCode", id.mncString.toInt()).put("signalStrength", info.cellSignalStrength.dbm)
+                            .put("locationAreaCode", id.tac).put("mobileCountryCode", mcc.toInt())
+                            .put("mobileNetworkCode", mnc.toInt()).put("signalStrength", info.cellSignalStrength.dbm)
                     }
                     else -> continue
                 }
