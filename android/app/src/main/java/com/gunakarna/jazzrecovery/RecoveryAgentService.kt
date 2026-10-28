@@ -293,7 +293,7 @@ class RecoveryAgentService : Service() {
         val cellTowers = readCellTowers()
         attempts.put(JSONObject().put("source", "CELLULAR").put("status",
             if (cellTowers.length() > 0) "PENDING_SERVER_LOOKUP" else "CELL_INFO_UNAVAILABLE"))
-        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NOT_CONFIGURED"))
+        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NO_RECENT_HELPER_REPORT"))
 
         val cached = lastKnownLocation()
         if (cached != null) attempts.put(locationJson(cached, "LAST_KNOWN", false))
