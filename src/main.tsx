@@ -59,6 +59,7 @@ type Device = {
     latitude?: number;
     longitude?: number;
     accuracyMeters?: number | null;
+    helperAccuracyMeters?: number | null;
     timestamp?: number;
     fresh?: boolean;
     estimated?: boolean;
