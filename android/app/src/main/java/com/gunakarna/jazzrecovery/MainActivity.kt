@@ -491,14 +491,17 @@ class MainActivity : Activity() {
         }
         card.addView(helperIdInput, LinearLayout.LayoutParams(-1, dp(48)))
         actionButton(card, "Authorize trusted helper device", "Authorize") {
-            authorizeHelperDevice(helperIdInput.text.toString().trim())
+            authorizeHelperDevice(helperIdInput.text.toString().trim(), true)
+        }
+        actionButton(card, "Revoke trusted helper device", "Revoke") {
+            authorizeHelperDevice(helperIdInput.text.toString().trim(), false)
         }
         addText(card, "Both phones must be registered. The helper owner must opt in first; the target owner then authorizes the helper. Reports are proximity estimates, not exact lost-phone coordinates.", 11f, muted, false, top = 10)
         content.addView(card, marginParams(bottom = 16))
         addStatusCard()
     }
 
-    private fun authorizeHelperDevice(helperDeviceId: String) {
+    private fun authorizeHelperDevice(helperDeviceId: String, enabled: Boolean) {
         if (helperDeviceId.isBlank()) { toast("Enter the helper device ID"); return }
         val base = (prefs.getString("server", "") ?: "").trimEnd('/')
         val secret = runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull()
@@ -521,7 +524,7 @@ class MainActivity : Activity() {
                     connection.setRequestProperty("Content-Type", "application/json")
                     connection.doOutput = true
                     connection.outputStream.use {
-                        it.write(JSONObject().put("helperDeviceId", helperDeviceId).put("enabled", true).toString().toByteArray(Charsets.UTF_8))
+                        it.write(JSONObject().put("helperDeviceId", helperDeviceId).put("enabled", enabled).toString().toByteArray(Charsets.UTF_8))
                     }
                     val code = connection.responseCode
                     responseMessage = (if (code in 200..299) connection.inputStream else connection.errorStream)
@@ -529,7 +532,7 @@ class MainActivity : Activity() {
                     success = code in 200..299
                 } finally { connection.disconnect() }
             } catch (failure: Exception) { responseMessage = failure.javaClass.simpleName }
-            runOnUiThread { toast(if (success) "Trusted helper authorized" else "Could not authorize helper: " + responseMessage.take(180)) }
+            runOnUiThread { toast(if (success) (if (enabled) "Trusted helper authorized" else "Trusted helper revoked") else "Could not update helper authorization: " + responseMessage.take(180)) }
         }.start()
     }
 
