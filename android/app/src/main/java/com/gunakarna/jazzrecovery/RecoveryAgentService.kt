@@ -229,11 +229,11 @@ class RecoveryAgentService : Service() {
     }
 
     /**
-     * Requests fresh fixes first. Cached data is used only after bounded fresh-provider
-     * attempts fail, and is explicitly labelled so callers never present it as live.
-     * Cellular measurements are sent to the authenticated server for provider lookup.
-     * BLE helper reports remain disabled unless the full opt-in advertising/scanning
-     * flow is active; never fabricate a proximity result.
+     * Coordinates independent Android location sources.
+     * Fresh fixes are validated before selection; cached coordinates are a last resort and
+     * are always returned with fresh=false. Cellular tower data is diagnostic input only:
+     * this client does not fabricate coordinates without a configured, authenticated
+     * geolocation lookup service. BLE helper reports are proximity evidence, never GPS.
      */
     private fun getLocation(mode: String = "auto"): JSONObject {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -250,66 +250,95 @@ class RecoveryAgentService : Service() {
             attempts.put(locationJson(cached, "LAST_KNOWN", false))
             return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
         }
+
         if (normalized == "cell") {
             val towers = readCellTowers()
-            return JSONObject().put("ok", false).put("error", if (towers.length() == 0) "CELL_INFO_UNAVAILABLE" else "CELLULAR_POSITIONING_PENDING")
+            return JSONObject().put("ok", false)
+                .put("error", if (towers.length() == 0) "CELL_INFO_UNAVAILABLE" else "CELLULAR_POSITIONING_NOT_CONFIGURED")
                 .put("source", "CELLULAR").put("fresh", false).put("cellTowers", towers)
-                .put("locations", org.json.JSONArray())
-        }
-        if (normalized == "gps") {
-            val gps = runCatching { requestFreshGps() }.getOrNull()
-            if (gps != null && validFreshLocation(gps)) {
-                attempts.put(locationJson(gps, "GPS_GNSS", true))
-                return locationEnvelope(gps, "GPS_GNSS", true, attempts)
-            }
-            return JSONObject().put("ok", false).put("error", "FRESH_GPS_UNAVAILABLE")
-                .put("source", "GPS_GNSS").put("fresh", false).put("locations", attempts)
-        }
-        if (normalized == "fused") {
-            val fused = runCatching { requestFreshFused() }.getOrNull()
-            if (fused != null && validFreshLocation(fused)) {
-                attempts.put(locationJson(fused, "FUSED", true))
-                return locationEnvelope(fused, "FUSED", true, attempts)
-            }
-            return JSONObject().put("ok", false).put("error", "FRESH_FUSED_LOCATION_UNAVAILABLE")
-                .put("source", "FUSED").put("fresh", false).put("locations", attempts)
+                .put("locations", attempts)
         }
 
-        // "all" gathers independent fresh providers; "auto" follows the priority
-        // sequence and stops at the first validated fresh fix.
-        val gps = runCatching { requestFreshGps() }.getOrNull()?.takeIf { validFreshLocation(it) }
-        if (gps != null) {
-            attempts.put(locationJson(gps, "GPS_GNSS", true))
+        if (normalized == "gps" || normalized == "fused" || normalized == "network") {
+            val result = when (normalized) {
+                "gps" -> runCatching { requestFreshGps() }.getOrNull()
+                "network" -> runCatching { requestFreshNetwork() }.getOrNull()
+                else -> runCatching { requestFreshFused() }.getOrNull()
+            }?.takeIf { validFreshLocation(it) }
+            val source = when (normalized) {
+                "gps" -> "GPS_GNSS"
+                "network" -> "NETWORK"
+                else -> "FUSED"
+            }
+            if (result != null) {
+                attempts.put(locationJson(result, source, true))
+                return locationEnvelope(result, source, true, attempts)
+            }
+            return JSONObject().put("ok", false)
+                .put("error", when (normalized) {
+                    "gps" -> "FRESH_GPS_UNAVAILABLE"
+                    "network" -> "FRESH_NETWORK_LOCATION_UNAVAILABLE"
+                    else -> "FRESH_FUSED_LOCATION_UNAVAILABLE"
+                })
+                .put("source", source).put("fresh", false).put("locations", attempts)
+        }
+
+        // Auto/all inspect all supported fresh providers, then choose the strongest
+        // validated fix by reported accuracy (with age as a tie-breaker).
+        val freshCandidates = mutableListOf<Pair<String, android.location.Location>>()
+
+        val network = runCatching { requestFreshNetwork() }.getOrNull()
+            ?.takeIf { validFreshLocation(it) }
+        if (network != null) {
+            attempts.put(locationJson(network, "NETWORK", true))
+            freshCandidates.add("NETWORK" to network)
         } else {
-            attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
+            attempts.put(JSONObject().put("source", "NETWORK").put("status", "UNAVAILABLE"))
         }
 
-        val fused = runCatching { requestFreshFused() }.getOrNull()?.takeIf { validFreshLocation(it) }
+        val fused = runCatching { requestFreshFused() }.getOrNull()
+            ?.takeIf { validFreshLocation(it) }
         if (fused != null) {
             attempts.put(locationJson(fused, "FUSED", true))
+            freshCandidates.add("FUSED" to fused)
         } else {
             attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
         }
 
+        val gps = runCatching { requestFreshGps() }.getOrNull()
+            ?.takeIf { validFreshLocation(it) }
+        if (gps != null) {
+            attempts.put(locationJson(gps, "GPS_GNSS", true))
+            freshCandidates.add("GPS_GNSS" to gps)
+        } else {
+            attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
+        }
+
         val cellTowers = readCellTowers()
         attempts.put(JSONObject().put("source", "CELLULAR").put("status",
-            if (cellTowers.length() > 0) "PENDING_SERVER_LOOKUP" else "CELL_INFO_UNAVAILABLE"))
-        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NO_RECENT_HELPER_REPORT"))
+            if (cellTowers.length() > 0) "MEASUREMENTS_AVAILABLE_LOOKUP_NOT_CONFIGURED" else "CELL_INFO_UNAVAILABLE"))
+        attempts.put(JSONObject().put("source", "BLE_HELPER").put("status", "NO_VERIFIED_HELPER_LOCATION"))
+
+        val bestFresh = freshCandidates.minWithOrNull(
+            compareBy<Pair<String, android.location.Location>> { it.second.accuracy }
+                .thenBy { System.currentTimeMillis() - it.second.time }
+                .thenBy { if (it.first == "FUSED") 0 else 1 }
+        )
+        if (bestFresh != null) {
+            return locationEnvelope(bestFresh.second, bestFresh.first, true, attempts)
+                .put("cellTowers", cellTowers)
+        }
 
         val cached = lastKnownLocation()
-        if (cached != null) attempts.put(locationJson(cached, "LAST_KNOWN", false))
-        val chosen = gps ?: fused ?: cached
-        return if (chosen != null) {
-            val source = when {
-                gps != null -> "GPS_GNSS"
-                fused != null -> "FUSED"
-                else -> "LAST_KNOWN"
-            }
-            locationEnvelope(chosen, source, source != "LAST_KNOWN", attempts).put("cellTowers", cellTowers)
-        } else {
-            JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
-                .put("source", "NONE").put("fresh", false).put("locations", attempts).put("cellTowers", cellTowers)
+        if (cached != null) {
+            attempts.put(locationJson(cached, "LAST_KNOWN", false))
+            return locationEnvelope(cached, "LAST_KNOWN", false, attempts)
+                .put("cellTowers", cellTowers)
         }
+
+        return JSONObject().put("ok", false).put("error", "LOCATION_UNAVAILABLE")
+            .put("source", "NONE").put("fresh", false).put("locations", attempts)
+            .put("cellTowers", cellTowers)
     }
 
     /** Collect only radio-cell measurements needed for a coarse estimate; never collect IMEI/phone number. */
@@ -375,6 +404,30 @@ class RecoveryAgentService : Service() {
             }.filter { validCoordinates(it.latitude, it.longitude) && it.time > 0L }
                 .maxByOrNull { it.time }
         }.getOrNull()
+    }
+
+    private fun requestFreshNetwork(): android.location.Location? {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        if (!runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)) return null
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<android.location.Location?>()
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                result.set(location)
+                latch.countDown()
+            }
+            @Deprecated("Deprecated by Android")
+            override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) { latch.countDown() }
+        }
+        return try {
+            manager.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, listener, Looper.getMainLooper())
+            latch.await(8, TimeUnit.SECONDS)
+            result.get()?.takeIf { validFreshLocation(it) }
+        } finally {
+            runCatching { manager.removeUpdates(listener) }
+        }
     }
 
     private fun requestFreshGps(): android.location.Location? {
