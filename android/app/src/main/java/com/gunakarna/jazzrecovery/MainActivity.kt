@@ -473,9 +473,60 @@ class MainActivity : Activity() {
             addText(card, "This Android version uses Bluetooth settings for access.", 13f, muted, false, bottom = 8)
             actionButton(card, "Open Bluetooth Settings", "Open") { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
         }
-        addText(card, "Bluetooth permission does not by itself provide a lost-phone location or remote recovery feature. The current app has no separate Bluetooth locator implementation.", 11f, muted, false, top = 12)
+        addText(card, "Nearby helper participation is opt-in. Keep Recovery Readiness running for background scanning or beacon advertising.", 11f, muted, false, top = 12)
+        actionButton(card, if (prefs.getBoolean("location_helper_opt_in", false)) "Disable trusted helper mode" else "Opt in as a trusted helper", if (prefs.getBoolean("location_helper_opt_in", false)) "Disable" else "Enable") {
+            updateLocationHelperSetting("/android/device/location-helper/consent", !prefs.getBoolean("location_helper_opt_in", false), "location_helper_opt_in")
+        }
+        actionButton(card, if (prefs.getBoolean("location_beacon_enabled", false)) "Disable this phone's recovery beacon" else "Enable this phone's recovery beacon", if (prefs.getBoolean("location_beacon_enabled", false)) "Disable" else "Enable") {
+            updateLocationHelperSetting("/android/device/location-helper/beacon-setting", !prefs.getBoolean("location_beacon_enabled", false), "location_beacon_enabled")
+        }
+        addText(card, "Beacon broadcasting only starts after at least one trusted helper is authorized by the device owner. Reports are proximity estimates, not exact lost-phone coordinates.", 11f, muted, false, top = 10)
         content.addView(card, marginParams(bottom = 16))
         addStatusCard()
+    }
+
+    private fun updateLocationHelperSetting(path: String, enabled: Boolean, preferenceKey: String) {
+        val base = (prefs.getString("server", "") ?: "").trimEnd('/')
+        val secret = runCatching { decrypt(prefs.getString("secret", "") ?: "") }.getOrNull()
+        if (!validHttpsUrl(base) || secret.isNullOrBlank()) {
+            toast("Save the HTTPS server URL and device token first")
+            return
+        }
+        Thread {
+            var success = false
+            var responseMessage = ""
+            try {
+                val connection = URL(base + path).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 8000
+                    connection.readTimeout = 12000
+                    connection.instanceFollowRedirects = false
+                    connection.setRequestProperty("Authorization", "Bearer " + secret)
+                    connection.setRequestProperty("X-Jazz-Lost-Device-Id", deviceId)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.doOutput = true
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("enabled", enabled).toString().toByteArray(Charsets.UTF_8))
+                    }
+                    val code = connection.responseCode
+                    responseMessage = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText().take(400) } ?: ""
+                    success = code in 200..299
+                } finally { connection.disconnect() }
+            } catch (failure: Exception) {
+                responseMessage = failure.javaClass.simpleName
+            }
+            runOnUiThread {
+                if (success) {
+                    prefs.edit().putBoolean(preferenceKey, enabled).apply()
+                    toast(if (enabled) "Location helper setting enabled" else "Location helper setting disabled")
+                    render(Screen.BLUETOOTH)
+                } else {
+                    toast("Could not update helper setting: " + responseMessage.take(180))
+                }
+            }
+        }.start()
     }
 
     private fun camera() {
