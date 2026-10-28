@@ -462,8 +462,9 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 31) {
             permissionLine(card, "Bluetooth connect", Manifest.permission.BLUETOOTH_CONNECT)
             permissionLine(card, "Bluetooth scan", Manifest.permission.BLUETOOTH_SCAN)
+            permissionLine(card, "Bluetooth advertise", Manifest.permission.BLUETOOTH_ADVERTISE)
             actionButton(card, "Request Bluetooth permissions", "Grant") {
-                val needed = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+                val needed = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE)
                     .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()
                 if (needed.isNotEmpty()) requestPermissions(needed, 102)
                 else startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
