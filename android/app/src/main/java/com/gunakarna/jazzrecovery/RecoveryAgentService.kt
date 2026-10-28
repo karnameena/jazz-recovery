@@ -279,7 +279,6 @@ class RecoveryAgentService : Service() {
         val gps = runCatching { requestFreshGps() }.getOrNull()?.takeIf { validFreshLocation(it) }
         if (gps != null) {
             attempts.put(locationJson(gps, "GPS_GNSS", true))
-            if (normalized != "all") return locationEnvelope(gps, "GPS_GNSS", true, attempts)
         } else {
             attempts.put(JSONObject().put("source", "GPS_GNSS").put("status", "UNAVAILABLE"))
         }
@@ -287,7 +286,6 @@ class RecoveryAgentService : Service() {
         val fused = runCatching { requestFreshFused() }.getOrNull()?.takeIf { validFreshLocation(it) }
         if (fused != null) {
             attempts.put(locationJson(fused, "FUSED", true))
-            if (gps == null && normalized != "all") return locationEnvelope(fused, "FUSED", true, attempts)
         } else {
             attempts.put(JSONObject().put("source", "FUSED").put("status", "UNAVAILABLE"))
         }
