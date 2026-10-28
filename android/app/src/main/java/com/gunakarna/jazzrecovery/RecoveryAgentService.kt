@@ -6,11 +6,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.camera2.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.ImageReader
 import android.os.*
 import android.location.LocationManager
 import android.Manifest
 import android.util.Base64
+import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
