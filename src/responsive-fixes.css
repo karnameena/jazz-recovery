@@ -365,7 +365,7 @@
   display: none;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .topbar {
     display: flex;
     align-items: center;
@@ -452,7 +452,7 @@
 }
 
 /* Prevent header content from creating horizontal overflow in either orientation. */
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .topbar,
   .topbar * {
     box-sizing: border-box;
