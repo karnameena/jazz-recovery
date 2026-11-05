@@ -1,5 +1,6 @@
 import jazzLogo from "../../Logo-jazz.webp";
-import { LockKeyhole, LogOut, Radio, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { LockKeyhole, LogOut, Menu, Radio, RefreshCw, X } from "lucide-react";
 
 type DashboardHeaderProps = {
   onlineCount: number;
@@ -22,6 +23,8 @@ export function DashboardHeader({
   showSubscription = false,
   logout,
 }: DashboardHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
   <header className="topbar glass-panel">
           <div className="brand-block">
@@ -38,7 +41,20 @@ export function DashboardHeader({
               <h1>Lost Mode Command Center</h1>
             </div>
           </div>
-          <div className="topbar-actions">
+          <button
+            type="button"
+            className="topbar-menu-toggle"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="dashboard-header-actions"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={25} /> : <Menu size={25} />}
+          </button>
+          <div
+            id="dashboard-header-actions"
+            className={`topbar-actions${menuOpen ? " is-open" : ""}`}
+          >
             <div className="fleet-pill">
               <Radio size={16} />
               <span>
@@ -48,21 +64,34 @@ export function DashboardHeader({
             <button
               className="ghost-button"
               onClick={() => {
+                setMenuOpen(false);
                 void load();
               }}
             >
               <RefreshCw size={17} /> Refresh
             </button>
-            <button className="ghost-button" onClick={() => void registerPasskey()}>
+            <button className="ghost-button" onClick={() => {
+              setMenuOpen(false);
+              void registerPasskey();
+            }}>
               <LockKeyhole size={17} /> Register passkey
             </button>
-            <button className="ghost-button" onClick={() => void setupRecoveryPin()}>
+            <button className="ghost-button" onClick={() => {
+              setMenuOpen(false);
+              void setupRecoveryPin();
+            }}>
               <LockKeyhole size={17} /> Set recovery PIN
             </button>
-            {showSubscription && <button className="ghost-button" onClick={openSubscription}>
+            {showSubscription && <button className="ghost-button" onClick={() => {
+              setMenuOpen(false);
+              openSubscription();
+            }}>
               <LockKeyhole size={17} /> Billing admin
             </button>}
-            <button className="ghost-button danger-hover" onClick={logout}>
+            <button className="ghost-button danger-hover" onClick={() => {
+              setMenuOpen(false);
+              void logout();
+            }}>
               <LogOut size={17} /> Logout
             </button>
           </div>
