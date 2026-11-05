@@ -1,4 +1,3 @@
-import React from "react";
 import { ChevronRight, ShieldCheck, Smartphone } from "lucide-react";
 
 type DeviceListItem = {

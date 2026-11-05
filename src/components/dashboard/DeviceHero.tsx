@@ -1,4 +1,3 @@
-import React from "react";
 import { BatteryCharging, CircleDot, Gauge, ShieldCheck, Wifi } from "lucide-react";
 import type { Device } from "../../types/device";
 

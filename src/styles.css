@@ -600,6 +600,56 @@ a {
   gap: 13px;
   transition: 0.18s ease;
 }
+
+.get-imei-action {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.get-imei-action > button {
+  width: 100%;
+}
+.get-imei-action .imei-reveal {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(129, 149, 219, 0.18);
+  border-radius: 12px;
+  background: rgba(4, 9, 23, 0.62);
+}
+.get-imei-action .imei-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #e7edff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.get-imei-action .imei-copy-button {
+  min-height: 34px;
+  width: auto;
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+}
+.get-imei-action .imei-copy-button > svg {
+  width: 15px;
+  height: 15px;
+}
+.get-imei-action .imei-feedback {
+  margin: 0;
+  color: #ffb4bd;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
 .action-grid button:hover {
   transform: translateY(-2px);
   border-color: rgba(114, 142, 255, 0.4);
@@ -902,7 +952,7 @@ a {
   .ghost-button {
     padding: 0 11px;
   }
-  .ghost-button:not(.danger-hover) span {
+  .topbar-actions .ghost-button:not(.danger-hover) span {
     display: none;
   }
   .dashboard-layout {
@@ -969,10 +1019,20 @@ a {
   .topbar-actions {
     gap: 6px;
   }
-  .ghost-button {
+  .topbar-actions .ghost-button {
     min-width: 42px;
     padding: 0 10px;
     font-size: 0;
+  }
+
+  .auth-card .ghost-button.full-width {
+    min-width: 0;
+    min-height: 48px;
+    height: auto;
+    padding: 12px 14px;
+    font-size: 0.92rem;
+    line-height: 1.35;
+    white-space: normal;
   }
   .ghost-button svg {
     width: 17px;
@@ -1086,3 +1146,457 @@ a {
     min-height: 215px;
   }
 }
+
+/* Short-lived confirmation shown only after a newly registered account receives its trial. */
+.trial-activation-toast {
+  position: fixed;
+  z-index: 1000;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  border: 1px solid rgba(91, 240, 166, 0.32);
+  border-radius: 14px;
+  background: rgba(8, 30, 29, 0.96);
+  color: #a7f3d0;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32);
+  font-size: 14px;
+  font-weight: 750;
+  text-align: center;
+  backdrop-filter: blur(14px);
+}
+
+/* Focused Recovery PIN dialog; existing dashboard styling remains unchanged. */
+.jazz-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 5, 14, 0.78);
+  backdrop-filter: blur(12px);
+}
+.jazz-modal {
+  width: min(100%, 480px);
+  padding: 28px;
+  border: 1px solid rgba(119, 151, 255, 0.25);
+  border-radius: 22px;
+  background: linear-gradient(
+    150deg,
+    rgba(17, 27, 55, 0.99),
+    rgba(7, 12, 28, 0.99)
+  );
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.6);
+}
+.jazz-modal-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #8ea5d8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+.jazz-modal-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(95, 230, 255, 0.35);
+  border-radius: 10px;
+  color: #5fe6ff;
+  font-size: 18px;
+}
+.jazz-modal h2 {
+  margin: 22px 0 8px;
+  color: #f5f8ff;
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+.jazz-modal-description {
+  margin: 0 0 22px;
+  color: #9eaccb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.jazz-modal-field {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  color: #dce5fb;
+  font-size: 12px;
+  font-weight: 650;
+}
+.jazz-modal-field input {
+  width: 100%;
+  height: 46px;
+  padding: 0 13px;
+  border: 1px solid rgba(137, 160, 218, 0.27);
+  border-radius: 11px;
+  outline: none;
+  background: rgba(4, 10, 25, 0.72);
+  color: #f5f8ff;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+.jazz-modal-field input:focus {
+  border-color: #66dce8;
+  box-shadow: 0 0 0 3px rgba(95, 230, 255, 0.12);
+}
+.jazz-modal-pin-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.jazz-modal-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 124, 148, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 80, 110, 0.08);
+  color: #ff9caf;
+  font-size: 12px;
+}
+.jazz-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.jazz-modal-actions button {
+  min-width: 112px;
+  height: 42px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.jazz-modal-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.jazz-modal-cancel {
+  background: rgba(120, 140, 180, 0.12);
+  border-color: rgba(145, 166, 255, 0.17) !important;
+  color: #c4cde1;
+}
+.jazz-modal-submit {
+  background: linear-gradient(120deg, #087f91, #3975d9);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(26, 126, 190, 0.2);
+}
+@media (max-width: 520px) {
+  .jazz-modal {
+    padding: 22px;
+  }
+  .jazz-modal-pin-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+/* Jazz Recovery login onboarding - reference design */
+.auth-card-login {
+  width: min(760px, 100%);
+  padding: 36px 48px;
+}
+
+.auth-onboarding {
+  width: 100%;
+  max-width: 680px;
+  margin: 24px auto 26px;
+}
+
+.auth-onboarding-copy {
+  max-width: 640px;
+  margin: 0 auto 24px;
+  color: #c4d0ec;
+  font-size: 1.04rem;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.auth-onboarding-copy strong {
+  color: #31d9eb;
+  font-weight: 800;
+}
+
+.auth-download-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.auth-download-button {
+  min-width: 0;
+  min-height: 60px;
+  padding: 12px 17px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  border-radius: 16px;
+  text-align: center;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.25;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.auth-download-button:hover {
+  transform: translateY(-2px);
+}
+
+.auth-download-button:focus-visible {
+  outline: 3px solid #65e7f2;
+  outline-offset: 3px;
+}
+
+.auth-download-button span {
+  display: inline-grid;
+  gap: 2px;
+}
+
+.auth-download-button small {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.auth-download-primary {
+  color: #fff;
+  background: linear-gradient(105deg, #3a4255, #43443f 65%, #3e3a3f);
+  border: 1px solid rgba(103, 174, 255, 0.65);
+  box-shadow: 0 8px 24px rgba(78, 89, 255, 0.16);
+}
+
+.auth-download-secondary {
+  color: #f0edff;
+  background: rgba(7, 13, 31, 0.65);
+  border: 1px solid #af96c4;
+  box-shadow: inset 0 0 0 1px rgba(48, 213, 238, 0.15);
+}
+
+.auth-download-secondary svg {
+  color: #b7c8ed;
+}
+
+.auth-login-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 18px;
+  margin: 28px 0 24px;
+  color: #c1cce7;
+  font-size: 1rem;
+}
+
+.auth-login-divider::before,
+.auth-login-divider::after {
+  content: "";
+  height: 1px;
+  background: rgba(166, 185, 235, 0.65);
+}
+
+.auth-signin-hint {
+  margin: 0;
+  color: #aebbd8;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.auth-card-login .auth-form {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  .auth-card-login {
+    width: 100%;
+    padding: 27px 20px;
+  }
+
+  .auth-onboarding {
+    margin: 19px auto 22px;
+  }
+
+  .auth-onboarding-copy {
+    font-size: 0.91rem;
+    line-height: 1.6;
+    margin-bottom: 18px;
+  }
+
+  .auth-download-actions {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .auth-download-button {
+    min-height: 54px;
+    padding: 11px 13px;
+    font-size: 0.91rem;
+  }
+
+  .auth-login-divider {
+    margin: 23px 0 19px;
+  }
+}
+/* JAZZ COMPACT LOGIN REFERENCE DESIGN */
+
+.auth-card-login {
+  box-sizing: border-box;
+  width: min(650px, 100%);
+  max-width: 650px;
+  padding: 30px 44px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.auth-card-login .auth-onboarding {
+  width: 100%;
+  max-width: 100%;
+  margin: 17px auto 19px;
+}
+
+.auth-card-login .auth-onboarding-copy {
+  max-width: 560px;
+  margin: 0 auto 17px;
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.auth-card-login .auth-download-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.auth-card-login .auth-download-primary {
+  box-sizing: border-box;
+  width: 264px;
+  max-width: 100%;
+  min-height: 48px;
+  padding: 9px 17px;
+  display: inline-flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  border-radius: 30px;
+}
+
+.auth-card-login .auth-download-primary span {
+  display: inline;
+  white-space: nowrap;
+}
+
+.auth-card-login .auth-download-primary small {
+  display: inline;
+  margin-left: 3px;
+  font-size: 0.86em;
+  font-weight: 500;
+}
+
+.auth-card-login .auth-login-divider {
+  margin: 22px 0 19px;
+  gap: 17px;
+}
+
+.auth-card-login .auth-signin-hint {
+  margin-bottom: 15px;
+}
+
+.auth-card-login .auth-form {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  .auth-card-login {
+    width: calc(100vw - 32px);
+    max-width: 420px;
+    padding: 24px 19px;
+  }
+
+  .auth-card-login .auth-onboarding {
+    margin: 15px auto 17px;
+  }
+
+  .auth-card-login .auth-onboarding-copy {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    margin-bottom: 15px;
+  }
+
+  .auth-card-login .auth-download-primary {
+    width: 264px;
+    max-width: 100%;
+    min-height: 46px;
+    font-size: 0.9rem;
+  }
+
+  .auth-card-login .auth-login-divider {
+    margin: 19px 0 16px;
+  }
+
+  .auth-card-login .auth-signin-hint {
+    margin-bottom: 13px;
+    font-size: 0.84rem;
+  }
+}
+/* JAZZ APK BUTTON RESPONSIVE OVERRIDE START */
+
+.auth-card-login .auth-download-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
+}
+
+.auth-card-login .auth-download-primary {
+  box-sizing: border-box;
+  width: 264px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 264px;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .auth-card-login .auth-download-actions {
+    width: 100%;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .auth-card-login .auth-download-primary {
+    width: 100%;
+    max-width: 264px;
+    flex: 0 1 264px;
+    min-height: 46px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .auth-card-login .auth-download-primary {
+    max-width: 100%;
+    font-size: 0.84rem;
+    gap: 7px;
+  }
+}
+
+/* JAZZ APK BUTTON RESPONSIVE OVERRIDE END */

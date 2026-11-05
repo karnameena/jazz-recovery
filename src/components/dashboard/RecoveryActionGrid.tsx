@@ -1,18 +1,16 @@
-import React from "react";
-import { Camera, LocateFixed, Mic, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { Camera, LocateFixed, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { GetIMEI } from "./GetIMEI";
 
 type RecoveryActionGridProps = {
+  deviceId: number;
   isActionBusy: (name: string, args?: Record<string, unknown>) => boolean;
   onAction: (name: string, args?: Record<string, unknown>) => Promise<void>;
-  voiceOpen: boolean;
-  onToggleVoice: () => void;
 };
 
 export function RecoveryActionGrid({
+  deviceId,
   isActionBusy,
   onAction,
-  voiceOpen,
-  onToggleVoice,
 }: RecoveryActionGridProps) {
   return (
     <>
@@ -67,15 +65,7 @@ export function RecoveryActionGrid({
           <ShieldCheck />
           <div><strong>Enable Lost Mode</strong><span>Secure recovery state</span></div>
         </button>
-        <button
-          className="voice-toggle"
-          aria-expanded={voiceOpen}
-          aria-controls="recovery-voice-panel"
-          onClick={onToggleVoice}
-        >
-          <Mic />
-          <div><strong>Voice Input</strong><span>Remote recovery voice broadcast</span></div>
-        </button>
+        <GetIMEI key={deviceId} deviceId={deviceId} />
       </section>
     </>
   );

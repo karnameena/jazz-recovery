@@ -317,3 +317,44 @@
     height: 340px;
   }
 }
+
+
+/* Footer layout: keep both credits readable without clipping on narrow screens. */
+.site-footer {
+  width: min(100%, 1500px);
+  min-width: 0;
+  box-sizing: border-box;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.site-footer > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.developer-credit {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.developer-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  .site-footer {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+    gap: 7px;
+  }
+  .site-footer > * {
+    width: 100%;
+  }
+  .developer-name {
+    font-size: clamp(15px, 4.5vw, 18px);
+    letter-spacing: 0.04em;
+  }
+}
