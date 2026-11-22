@@ -1,4 +1,3 @@
-import React from "react";
 import { MapPin, RefreshCw } from "lucide-react";
 import type { Device } from "../../types/device";
 

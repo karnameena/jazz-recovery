@@ -317,3 +317,169 @@
     height: 340px;
   }
 }
+
+
+/* Footer layout: keep both credits readable without clipping on narrow screens. */
+.site-footer {
+  width: min(100%, 1500px);
+  min-width: 0;
+  box-sizing: border-box;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.site-footer > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.developer-credit {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.developer-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  .site-footer {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+    gap: 7px;
+  }
+  .site-footer > * {
+    width: 100%;
+  }
+  .developer-name {
+    font-size: clamp(15px, 4.5vw, 18px);
+    letter-spacing: 0.04em;
+  }
+}
+
+
+/* Responsive dashboard header menu: desktop actions remain unchanged. */
+.topbar-menu-toggle {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  .topbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .topbar .brand-block {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .topbar .brand-block h1 {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .topbar-menu-toggle {
+    display: inline-grid;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(132, 148, 209, 0.32);
+    border-radius: 14px;
+    background: rgba(8, 14, 34, 0.72);
+    color: #eef3ff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .topbar-menu-toggle:focus-visible {
+    outline: 2px solid #63d9ff;
+    outline-offset: 3px;
+  }
+
+  /* Compact dropdown anchored to the hamburger, not a full-width row below the header. */
+  .topbar .topbar-actions {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 12px;
+    z-index: 80;
+    width: min(270px, calc(100vw - 40px));
+    min-width: 0;
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid rgba(132, 148, 209, 0.28);
+    border-radius: 16px;
+    background: linear-gradient(155deg, rgba(16, 23, 49, 0.99), rgba(9, 14, 33, 0.99));
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48);
+  }
+
+  .topbar .topbar-actions.is-open {
+    display: grid;
+  }
+
+  .topbar .topbar-actions .fleet-pill {
+    display: none;
+  }
+
+  .topbar .topbar-actions .ghost-button {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    justify-content: flex-start;
+    gap: 11px;
+    white-space: normal;
+    font-size: 0.86rem !important;
+    line-height: 1.25;
+    padding: 10px 12px;
+    text-align: left;
+  }
+
+  /* Older mobile rules hid action labels; explicitly restore them in this menu. */
+  .topbar .topbar-actions .ghost-button span {
+    display: inline !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .topbar .topbar-actions .ghost-button svg {
+    flex: 0 0 17px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar {
+    padding: 10px 11px;
+  }
+
+  .topbar-menu-toggle {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+}
+
+/* Prevent header content from creating horizontal overflow in either orientation. */
+@media (max-width: 1200px) {
+  .topbar,
+  .topbar * {
+    box-sizing: border-box;
+  }
+
+  .topbar-actions .ghost-button {
+    overflow-wrap: anywhere;
+  }
+}

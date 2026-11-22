@@ -1,4 +1,3 @@
-import React from "react";
 import { Camera, Download } from "lucide-react";
 import type { Device } from "../../types/device";
 

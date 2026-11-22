@@ -3,12 +3,15 @@ export type LocationState = {
   longitude: number;
   accuracyMeters?: number | null;
   timestamp?: number | string | null;
+  status?: "live" | "cached" | "old" | "unavailable";
+  relayId?: string;
 };
 
 export type PhotoState = {
   dataUrl: string;
   camera?: string | null;
   timestamp?: number | string | null;
+  relayId?: string;
 };
 
 export type Device = {

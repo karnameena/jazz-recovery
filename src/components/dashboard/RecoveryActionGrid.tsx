@@ -1,18 +1,17 @@
-import React from "react";
-import { Camera, LocateFixed, Mic, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { Camera, LocateFixed, ShieldCheck, Volume2 } from "lucide-react";
+import { GetIMEI } from "./GetIMEI";
+import { UnlockCaptureControl } from "./UnlockCaptureControl";
 
 type RecoveryActionGridProps = {
+  deviceId: number;
   isActionBusy: (name: string, args?: Record<string, unknown>) => boolean;
   onAction: (name: string, args?: Record<string, unknown>) => Promise<void>;
-  voiceOpen: boolean;
-  onToggleVoice: () => void;
 };
 
 export function RecoveryActionGrid({
+  deviceId,
   isActionBusy,
   onAction,
-  voiceOpen,
-  onToggleVoice,
 }: RecoveryActionGridProps) {
   return (
     <>
@@ -24,10 +23,7 @@ export function RecoveryActionGrid({
         <span>Commands use the existing allowlisted recovery workflow.</span>
       </section>
       <section className="action-grid">
-        <button disabled={isActionBusy("DEVICE_STATUS")} onClick={() => void onAction("DEVICE_STATUS")}>
-          <Smartphone />
-          <div><strong>Device Status</strong><span>Refresh device health</span></div>
-        </button>
+        <UnlockCaptureControl deviceId={deviceId} />
         <button disabled={isActionBusy("GET_LOCATION")} onClick={() => void onAction("GET_LOCATION")}>
           <LocateFixed />
           <div>
@@ -67,15 +63,7 @@ export function RecoveryActionGrid({
           <ShieldCheck />
           <div><strong>Enable Lost Mode</strong><span>Secure recovery state</span></div>
         </button>
-        <button
-          className="voice-toggle"
-          aria-expanded={voiceOpen}
-          aria-controls="recovery-voice-panel"
-          onClick={onToggleVoice}
-        >
-          <Mic />
-          <div><strong>Voice Input</strong><span>Remote recovery voice broadcast</span></div>
-        </button>
+        <GetIMEI key={deviceId} deviceId={deviceId} />
       </section>
     </>
   );

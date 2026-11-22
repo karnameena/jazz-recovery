@@ -1,4 +1,3 @@
-import React from "react";
 import { Crosshair, Download, ExternalLink, MapPin, Navigation } from "lucide-react";
 import type { Device, LocationState } from "../../types/device";
 
@@ -39,7 +38,7 @@ export function LocationCard({
               sandbox="allow-scripts allow-same-origin"
             />
             <div className="map-overlay">
-              <Navigation size={15} /> Last known position
+              <Navigation size={15} /> {device.location.status === "live" ? "Live location" : device.location.status === "old" ? "Old cached location" : "Cached location"}
             </div>
           </div>
           <div className="location-meta">

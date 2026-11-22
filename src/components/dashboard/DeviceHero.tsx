@@ -1,4 +1,3 @@
-import React from "react";
 import { BatteryCharging, CircleDot, Gauge, ShieldCheck, Wifi } from "lucide-react";
 import type { Device } from "../../types/device";
 
@@ -16,7 +15,7 @@ export function DeviceHero({ device, formatTime }: DeviceHeroProps) {
         </div>
         <div>
           <div className={`status-label ${device.online ? "online-text" : "offline-text"}`}>
-            {device.online ? "ONLINE • LIVE CONNECTION" : "OFFLINE • LAST KNOWN STATE"}
+            {device.online ? "ONLINE • RECENT HEARTBEAT" : "OFFLINE • LAST KNOWN STATE"}
           </div>
           <h2>{device.deviceName || device.deviceId || "Registered device"}</h2>
           <div className="device-id-line">

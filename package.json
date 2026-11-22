@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5190",
-    "build": "vite build"
+    "build": "vite build",
+    "test:proxy": "node --test tests/api-proxy.test.mjs"
   },
   "dependencies": {
     "lucide-react": "0.468.0",
@@ -15,6 +16,6 @@
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.4",
     "typescript": "5.7.2",
-    "vite": "6.0.7"
+    "vite": "6.4.5"
   }
 }
